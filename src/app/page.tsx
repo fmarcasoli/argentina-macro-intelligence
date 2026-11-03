@@ -1,69 +1,259 @@
-import Image from "next/image";
+import Link from "next/link";
+import { Suspense } from "react";
+import { TimeSeriesChart } from "@/components/charts/time-series-chart";
+import { StatusBadge } from "@/components/ui-kit/badges";
+import { DataUnavailable, safeLoad } from "@/components/ui-kit/data-state";
+import { KpiTile, KpiTileSkeleton } from "@/components/ui-kit/kpi-tile";
+import { PageHeader, Panel } from "@/components/ui-kit/panel";
+import { getIndicatorSnapshots, getObservations, getSourceSummaries } from "@/lib/data/queries";
+import { formatDateTime, formatNumber } from "@/lib/format";
 
-export default function Home() {
+export const metadata = { title: "Overview" };
+
+const KPIS: { id: string; label: string }[] = [
+  { id: "bcra.reservas", label: "Reservas internacionales" },
+  { id: "bcra.tc_mayorista", label: "Tipo de cambio mayorista" },
+  { id: "calc.ipc_var_mensual", label: "Inflación mensual" },
+  { id: "calc.ipc_var_interanual", label: "Inflación interanual" },
+  { id: "indec.emae_desest", label: "EMAE desestacionalizado" },
+  { id: "calc.pib_real_var_interanual", label: "PIB real — var. i.a." },
+  { id: "bcra.badlar", label: "Tasa BADLAR" },
+  { id: "bcra.base_monetaria", label: "Base monetaria" },
+];
+
+export default function OverviewPage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <>
+      <PageHeader
+        code="01 · OVW"
+        title="Overview"
+        description="Indicadores clave de la economía argentina con datos oficiales del INDEC y el BCRA. Cada valor enlaza a su ficha con fuente, metodología e historial."
+      />
+      <Suspense
+        fallback={
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {KPIS.map((k) => (
+              <KpiTileSkeleton key={k.id} />
+            ))}
+          </div>
+        }
+      >
+        <KpiGrid />
+      </Suspense>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Suspense fallback={<ChartSkeleton title="Inflación mensual (IPC Nacional)" />}>
+          <ChartBlock
+            title="Inflación mensual (IPC Nacional)"
+            code="CALC"
+            series={[{ id: "calc.ipc_var_mensual", label: "Var. mensual IPC" }]}
+            frequency="M"
+            unit="%"
+            kind="bar"
+            years={4}
+            defaultRange="3A"
+            footnote="Calculada desde el índice IPC Nivel General (INDEC). Coincide con la variación publicada por INDEC."
+          />
+        </Suspense>
+        <Suspense fallback={<ChartSkeleton title="Tipo de cambio y bandas" />}>
+          <ChartBlock
+            title="Tipo de cambio mayorista y bandas cambiarias"
+            code="BCRA"
+            series={[
+              { id: "bcra.tc_mayorista", label: "Mayorista (A 3500)" },
+              { id: "bcra.banda_superior", label: "Banda superior", dashed: true },
+              { id: "bcra.banda_inferior", label: "Banda inferior", dashed: true },
+            ]}
+            frequency="D"
+            unit="$/USD"
+            years={3}
+            defaultRange="1A"
+            footnote="Pesos por dólar. Las bandas rigen desde el 14/04/2025."
+          />
+        </Suspense>
+        <Suspense fallback={<ChartSkeleton title="Reservas internacionales" />}>
+          <ChartBlock
+            title="Reservas internacionales"
+            code="BCRA"
+            series={[{ id: "bcra.reservas", label: "Reservas" }]}
+            frequency="D"
+            unit="Millones de USD"
+            years={12}
+            defaultRange="5A"
+            footnote="Millones de USD, saldo diario."
+          />
+        </Suspense>
+        <Suspense fallback={<ChartSkeleton title="Actividad económica" />}>
+          <ChartBlock
+            title="Actividad: EMAE"
+            code="INDEC"
+            series={[
+              { id: "indec.emae_desest", label: "Desestacionalizado" },
+              { id: "indec.emae", label: "Serie original" },
+            ]}
+            frequency="M"
+            unit="Índice 2004=100"
+            years={12}
+            defaultRange="5A"
+            footnote="Índice 2004=100."
+          />
+        </Suspense>
+        <Suspense fallback={<ChartSkeleton title="Tasas de interés" />}>
+          <ChartBlock
+            title="Tasas de interés de referencia"
+            code="BCRA"
+            series={[
+              { id: "bcra.tamar", label: "TAMAR" },
+              { id: "bcra.badlar", label: "BADLAR" },
+              { id: "bcra.plazo_fijo_30d", label: "Plazo fijo 30 días" },
+            ]}
+            frequency="D"
+            unit="% TNA"
+            years={3}
+            defaultRange="1A"
+            footnote="Porcentaje nominal anual, bancos privados."
+          />
+        </Suspense>
+        <Suspense fallback={<ChartSkeleton title="Comercio exterior" />}>
+          <ChartBlock
+            title="Saldo comercial"
+            code="INDEC"
+            series={[{ id: "indec.saldo_comercial", label: "Saldo comercial" }]}
+            frequency="M"
+            unit="Millones de USD"
+            kind="bar"
+            years={6}
+            defaultRange="3A"
+            zeroLine
+            footnote="Millones de USD. Exportaciones menos importaciones."
+          />
+        </Suspense>
+      </div>
+
+      <div className="mt-4">
+        <Suspense fallback={<ChartSkeleton title="Estado de las fuentes" />}>
+          <SourcesStatus />
+        </Suspense>
+      </div>
+    </>
+  );
+}
+
+async function KpiGrid() {
+  const res = await safeLoad(() => getIndicatorSnapshots({ ids: KPIS.map((k) => k.id), sparkPoints: 40 }));
+  if (!res.ok) return <DataUnavailable error={res.error} />;
+  const byId = new Map(res.data.map((r) => [r.id, r]));
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {KPIS.map((k) => {
+        const ind = byId.get(k.id);
+        return ind ? (
+          <KpiTile key={k.id} ind={ind} label={k.label} />
+        ) : (
+          <div key={k.id} className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+            {k.label}: serie no registrada. Ejecutá <code className="num">npm run catalog:seed</code>.
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+async function ChartBlock({
+  title,
+  code,
+  series,
+  frequency,
+  unit,
+  kind,
+  years,
+  defaultRange,
+  zeroLine,
+  footnote,
+}: {
+  title: string;
+  code: string;
+  series: { id: string; label: string; dashed?: boolean }[];
+  frequency: "D" | "M" | "Q";
+  unit: string;
+  kind?: "line" | "bar";
+  years: number;
+  defaultRange: "1A" | "3A" | "5A" | "10A" | "MAX";
+  zeroLine?: boolean;
+  footnote?: string;
+}) {
+  const res = await safeLoad(() => Promise.all(series.map((s) => getObservations(s.id, { lastYears: years }))));
+  return (
+    <Panel
+      title={title}
+      code={code}
+      actions={
+        <Link href={`/indicadores/${encodeURIComponent(series[0].id)}`} className="text-[11px] text-muted-foreground hover:text-amber">
+          Ver ficha →
+        </Link>
+      }
+    >
+      {!res.ok ? (
+        <DataUnavailable error={res.error} />
+      ) : (
+        <TimeSeriesChart
+          series={series.map((s, i) => ({ key: s.id.replace(/\./g, "_"), label: s.label, points: res.data[i], dashed: s.dashed }))}
+          frequency={frequency}
+          unit={unit}
+          kind={kind}
+          defaultRange={defaultRange}
+          zeroLine={zeroLine}
+          height={240}
+        />
+      )}
+      {footnote && <p className="mt-2 text-[11px] text-muted-foreground">{footnote}</p>}
+    </Panel>
+  );
+}
+
+function ChartSkeleton({ title }: { title: string }) {
+  return (
+    <Panel title={title}>
+      <div className="h-[270px] animate-pulse rounded bg-muted/40" />
+    </Panel>
+  );
+}
+
+async function SourcesStatus() {
+  const res = await safeLoad(() => getSourceSummaries());
+  if (!res.ok) return <DataUnavailable error={res.error} />;
+  return (
+    <Panel title="Estado de las fuentes" code="SYS" actions={<Link href="/configuracion" className="text-[11px] text-muted-foreground hover:text-amber">Detalle →</Link>}>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {res.data.map((s) => (
+          <div key={s.id} className="min-w-0 rounded border border-border/70 p-3">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="num text-sm font-semibold text-amber">{s.id}</span>
+              <span className="truncate text-xs text-muted-foreground">{s.api_name}</span>
+            </div>
+            <dl className="num mt-2 grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <dt className="text-muted-foreground">Catálogo</dt>
+                <dd>{formatNumber(s.catalog_count, { decimals: 0 })}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Sincronizadas</dt>
+                <dd>{s.tracked_count}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Observaciones</dt>
+                <dd>{formatNumber(s.observation_count, { decimals: 0 })}</dd>
+              </div>
+            </dl>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <StatusBadge status="ok" /> <span className="num">{s.ok_count}</span>
+              <StatusBadge status="stale" /> <span className="num">{s.stale_count}</span>
+              <StatusBadge status="error" /> <span className="num">{s.error_count}</span>
+              <span className="ml-auto text-muted-foreground">Última sync: {formatDateTime(s.last_synced_at)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
   );
 }

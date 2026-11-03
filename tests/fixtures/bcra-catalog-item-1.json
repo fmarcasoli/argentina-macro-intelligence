@@ -1,0 +1,1 @@
+{"status":200,"metadata":{"resultset":{"count":1,"offset":0,"limit":1000}},"results":[{"idVariable":1,"descripcion":"Reservas internacionales","categoria":"Principales Variables","tipoSerie":"Saldos","periodicidad":"D","unidadExpresion":"En millones de USD","moneda":"ME","primerFechaInformada":"1996-01-03","ultFechaInformada":"2026-10-29","ultValorInformado":50164.00000000000}]}
