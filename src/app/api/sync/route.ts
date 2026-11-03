@@ -10,7 +10,7 @@ import { syncAll } from "@/lib/ingest/sync";
  * Se divide por fuente para respetar el tiempo máximo de ejecución del plan gratuito.
  * La recarga completa del histórico se hace por CLI (npm run sync:full).
  */
-export const maxDuration = 60;
+export const maxDuration = 300; // máximo de Vercel Hobby con Fluid Compute
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;

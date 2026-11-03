@@ -132,7 +132,7 @@ dentro de los 500 MB del plan gratuito.
 3. `vercel.json` define dos cron jobs diarios (Hobby permite una ejecución
    diaria por job): `/api/sync?source=BCRA` a las 22:00 UTC y
    `/api/sync?source=INDEC` a las 22:30 UTC. Cada uno es incremental, tarda
-   ~5–15 s y tiene `maxDuration = 60`.
+   ~5–15 s y tiene `maxDuration = 300` (máximo del plan Hobby con Fluid Compute).
 
 Las páginas se sirven con un shell estático y los datos se leen en cada
 request (sin congelar datos en el build), por lo que el build no necesita
