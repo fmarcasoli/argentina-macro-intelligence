@@ -39,14 +39,12 @@ export const NAV_SECTIONS: NavSection[] = [
     description: "Inflación, tasas reales, devaluación, salarios reales y agregados monetarios reales con datos oficiales.",
   },
   {
-    href: "/macro-ai", label: "MACRO AI", short: "AI", icon: "ai", status: "construction",
-    description: "Asistente de análisis en lenguaje natural sobre el catálogo de datos.",
-    planned: ["Consultas en lenguaje natural", "Respuestas con citas a la serie y fecha de origen"],
+    href: "/macro-ai", label: "MACRO AI", short: "AI", icon: "ai", status: "ready",
+    description: "Asistente de investigación con acceso controlado a las series, cálculos, econometría, gráficos e informes. Modelo local gratuito (Ollama) o modo sin modelo.",
   },
   {
-    href: "/reportes", label: "Reportes", short: "REP", icon: "reports", status: "construction",
-    description: "Informes periódicos exportables.",
-    planned: ["Reporte mensual de coyuntura", "Exportación a PDF y CSV"],
+    href: "/reportes", label: "Reportes", short: "REP", icon: "reports", status: "ready",
+    description: "Informes automáticos con gráficos, tablas e indicadores, exportables a PDF, Excel y CSV.",
   },
   {
     href: "/favoritos", label: "Favoritos", short: "FAV", icon: "favorites", status: "ready",

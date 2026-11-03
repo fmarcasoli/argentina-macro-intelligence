@@ -18,8 +18,28 @@ datos oficiales del **INDEC** y del **BCRA**.
   macroeconómico (identidades, escenarios del usuario y shocks en un VAR).
   Verificado contra statsmodels. Detalle en [`docs/ECONOMETRICS.md`](docs/ECONOMETRICS.md).
 
-Los módulos de MACRO AI, reportes y constructor de indicadores siguen “en
-construcción” para fases posteriores.
+- **Fase 4 — MACRO AI:** asistente de investigación con herramientas
+  validadas sobre los datos (búsqueda, cálculos, comparaciones, correlaciones,
+  regresiones, rezagos, econometría, proyecciones, gráficos, anomalías e
+  informes), modelo local gratuito con Ollama (o sin modelo, con reglas),
+  verificación de cifras, memoria de investigación con controles de
+  privacidad e informes automáticos exportables a PDF, Excel y CSV. Detalle en
+  [`docs/MACRO_AI.md`](docs/MACRO_AI.md).
+
+El constructor de indicadores sigue “en construcción”.
+
+### MACRO AI en 3 pasos (opcional, gratis)
+
+```bash
+brew install ollama        # o https://ollama.com/download
+ollama pull qwen2.5:7b     # ~4,7 GB; requiere ~8 GB de memoria libre
+ollama serve               # la app de escritorio lo deja corriendo sola
+```
+
+Abrir `/macro-ai` → **Modelo** → "Ollama local". Para usarlo desde la versión
+publicada, autorizar el origen (`OLLAMA_ORIGINS`), ver
+[`docs/MACRO_AI.md`](docs/MACRO_AI.md). Sin Ollama, MACRO AI responde igual con
+reglas y cálculos, y los informes no requieren ningún modelo.
 
 | | |
 |---|---|
@@ -194,6 +214,9 @@ No hay credenciales en el código: `.env*` está en `.gitignore` (salvo `.env.ex
 | `GET /api/indicators/{id}/observations?from=&to=&format=json\|csv` | Observaciones con trazabilidad (valor crudo, fecha de la fuente, tipo, publicación, revisiones) |
 | `GET /api/sync?source=BCRA\|INDEC` | Sincronización incremental (requiere `Authorization: Bearer $CRON_SECRET`) |
 | `GET /api/series?ids=a,b&ipc=1` | Series para el motor de gráficos (descarga a pedido las que no tienen datos) |
+| `GET /api/ai/status` · `POST /api/ai/chat` | Estado de MACRO AI y modo servidor (reenvía al modelo configurado) |
+| `GET/POST /api/ai/conversations` · `/{id}` · `/api/ai/spaces` · `/api/ai/notes` | Memoria de investigación del espacio de trabajo |
+| `GET/DELETE /api/ai/memory` | Exportar o borrar toda la memoria |
 | `GET /api/series/vintages?id=` | Disponibilidad de cada observación y su historial de revisiones (backtesting sin información futura) |
 | `GET/POST /api/workspace/analyses` · `/{id}` | Análisis guardados del espacio de trabajo |
 | `GET/POST/DELETE /api/workspace/favorites` | Series favoritas |
@@ -209,6 +232,7 @@ src/
   lib/
     analysis/               motor de análisis y calculadoras (funciones puras)
     econ/                   motor econométrico y simulador (funciones puras + Web Worker)
+    ai/                     MACRO AI: herramientas, agente, planificador, informes, anomalías
     connectors/             BCRAConnector, INDECConnector, cliente HTTP
     normalize/              normalización, validación, fechas, series derivadas
     ingest/                 catálogo, motor de sincronización y descarga a pedido
@@ -235,8 +259,8 @@ docs/                       documentación de APIs, modelo de datos, análisis y
 | 06 | Econometría | ✅ (descriptiva, correlaciones, MCO, series temporales, VAR, VECM, proyecciones, backtesting) |
 | 07 | Simulador macroeconómico | ✅ (aritmético, escenarios del usuario, shocks en VAR estimado) |
 | 08 | Calculadoras económicas | ✅ (inflación, tasas reales, devaluación, salarios y agregados reales) |
-| 09 | MACRO AI | 🚧 |
-| 10 | Reportes | 🚧 |
+| 09 | MACRO AI | ✅ (asistente con herramientas, Ollama local o sin modelo, memoria de investigación) |
+| 10 | Reportes | ✅ (9 informes automáticos, PDF/Excel/CSV) |
 | 11 | Favoritos | ✅ (análisis guardados y series favoritas, sin login) |
 | 12 | Configuración | ✅ (estado de fuentes, sincronizaciones y errores) |
 

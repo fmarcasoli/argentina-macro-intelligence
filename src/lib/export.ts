@@ -147,3 +147,48 @@ export async function downloadTablesXlsx(title: string, sheets: ExportSheet[], m
   const blob = await writeXlsxFile(all, {}).toBlob();
   download(blob, exportFileName(title, "xlsx"));
 }
+
+/**
+ * PDF de un bloque de la página (respuesta de MACRO AI o informe): se captura
+ * como imagen y se reparte en páginas A4 con encabezado de fuente y fecha.
+ */
+export async function downloadPdf(node: HTMLElement, title: string) {
+  const [{ toPng }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
+  const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
+  // Resolución 1,5× y páginas en JPEG: legible y liviano (un informe completo pesa ~1–3 MB).
+  const url = await toPng(node, { backgroundColor: bg, pixelRatio: 1.5, cacheBust: true });
+  const img = await new Promise<HTMLImageElement>((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = url;
+  });
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageW = 210;
+  const pageH = 297;
+  const margin = 10;
+  const header = 12;
+  const usableW = pageW - 2 * margin;
+  const usableH = pageH - margin - header - 8;
+  const mmPerPx = usableW / img.width;
+  const sliceH = Math.floor(usableH / mmPerPx);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+  let page = 0;
+  for (let y = 0; y < img.height; y += sliceH) {
+    const h = Math.min(sliceH, img.height - y);
+    canvas.width = img.width;
+    canvas.height = h;
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, y, img.width, h, 0, 0, img.width, h);
+    if (page > 0) pdf.addPage();
+    pdf.setFontSize(9);
+    pdf.setTextColor(110);
+    pdf.text(`${title} — Argentina Macro Intelligence (datos oficiales INDEC y BCRA)`, margin, margin);
+    pdf.text(`Generado ${new Date().toLocaleString("es-AR")} · página ${page + 1}`, margin, margin + 4.5);
+    pdf.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", margin, margin + header, usableW, h * mmPerPx);
+    page++;
+  }
+  pdf.save(exportFileName(title, "pdf"));
+}
