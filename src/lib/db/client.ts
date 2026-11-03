@@ -29,12 +29,16 @@ export function getSql(): Sql {
     );
   }
   const isPooler = /pooler\.supabase\.com|:6543\b/.test(url);
+  // El pooler en modo transacción (6543) no soporta consultas encadenadas
+  // (pipelining) en una misma conexión: las respuestas quedan colgadas.
+  const isTransactionPooler = /:6543\b/.test(url);
   const isLocal = /@(127\.0\.0\.1|localhost)[:/]/.test(url);
   const sql = postgres(url, {
     max: Number(process.env.DATABASE_POOL_MAX ?? (isPooler ? 3 : 5)),
     idle_timeout: 20,
     connect_timeout: 15,
     prepare: !isPooler,
+    ...(isTransactionPooler ? { max_pipeline: 1, fetch_types: false } : {}),
     ssl: isLocal ? false : "require",
     onnotice: () => {},
     types: {
