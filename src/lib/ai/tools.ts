@@ -254,7 +254,11 @@ export const TOOLS = [
         src.from = r.base?.d ?? r.from;
         src.to = r.to;
         return ok(
-          `${m.name} (${m.source_id} ${m.source_code ?? m.id}): variación ${r.from}→${r.to} = ${fmt(r.accumulated)} ${u} en ${r.periods} períodos${r.base ? ` (base ${r.base.d} = ${fmt(r.base.v)})` : ""}; promedio por período ${fmt(r.averagePerPeriod)} %; anualizada ${fmt(r.annualized)} %.${r.missing.length ? ` Faltan datos: ${r.missing.join(", ")}.` : ""}`,
+          `${m.name} (${m.source_id} ${m.source_code ?? m.id}): ${
+            r.base
+              ? `desde la base ${r.base.d.slice(0, 7)} (valor ${fmt(r.base.v)}, el período anterior al inicio pedido) hasta ${r.to.slice(0, 7)} (valor ${fmt(r.rows.find((x) => x.d === r.to)?.value)})`
+              : `de ${r.from.slice(0, 7)} a ${r.to.slice(0, 7)}`
+          } la variación acumulada es ${fmt(r.accumulated)} ${u} (${r.periods} períodos, ${r.from.slice(0, 7)} a ${r.to.slice(0, 7)} inclusive); promedio por período ${fmt(r.averagePerPeriod)} %; anualizada ${fmt(r.annualized)} %. Al citarla, mencioná la base usada.${r.missing.length ? ` Faltan datos: ${r.missing.join(", ")}.` : ""}`,
           [
             { type: "stats", items: [{ label: "Variación acumulada", value: `${fmt(r.accumulated)} ${u}`, note: `${r.from.slice(0, 7)} → ${r.to.slice(0, 7)}` }, { label: "Períodos", value: String(r.periods) }, { label: "Promedio por período", value: `${fmt(r.averagePerPeriod)} %` }, { label: "Equivalente anual", value: `${fmt(r.annualized)} %` }] },
             { type: "chart", title: "Variación acumulada (base 0 al inicio)", panels: [{ unit: u, series: [{ key: "c", name: "Acumulada" }, ...(r.base100 ? [] : [])] }], rows: r.rows.map((x) => ({ x: x.d, c: x.cumulative })) },
