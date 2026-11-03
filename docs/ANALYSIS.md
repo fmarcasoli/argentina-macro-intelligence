@@ -119,3 +119,30 @@ Sin login (la autenticación queda para una fase posterior):
 | `GET/POST /api/workspace/analyses` | Listar / guardar análisis |
 | `GET/PUT/DELETE /api/workspace/analyses/{id}` | Abrir / actualizar / borrar (solo del propio espacio) |
 | `GET/POST/DELETE /api/workspace/favorites` | Favoritos |
+
+## Datos mes a mes y variación entre fechas
+
+**Mes a mes** (`src/lib/analysis/breakdown.ts` → `periodBreakdown`). En cada
+ficha, la tabla "Datos mes a mes" (o trimestre a trimestre) muestra cada
+período con su valor, la variación contra el período anterior, la
+interanual y la acumulada en el año (contra el último período del año
+anterior), agrupada por año. Las series diarias se resumen por mes (promedio
+para tasas y precios, cierre para stocks, suma para flujos). Las series que ya
+son tasas (desocupación, inflación mensual) muestran las variaciones en puntos
+porcentuales. En cada categoría de los paneles INDEC y BCRA, el cuadro "Mes a
+mes" muestra las series destacadas en columnas, un mes por fila.
+
+**Variación entre fechas** (`rangeChange`). En cada ficha se eligen libremente
+el mes inicial y el final (inclusive):
+
+- Niveles e índices: acumulada = V(fin) / V(mes anterior al inicio) − 1, con
+  base 0 al comienzo (el primer mes elegido ya incluye su propia variación;
+  p. ej. septiembre 2024 → enero 2026 usa agosto 2024 como base).
+- Tasas mensuales de variación (inflación mensual): se componen Π(1 + r) − 1.
+- Otras tasas: cambio en puntos porcentuales.
+- Se informa cada período (variación individual y acumulada hasta ese mes),
+  el promedio geométrico por período y el equivalente anual. Los meses sin dato
+  no se completan.
+- **Base 100** en el mes que se elija (aunque esté fuera del período):
+  índice = 100 · V(t) / V(base). También se puede elegir el mes base en el
+  gráfico de cualquier serie al usar "Índice base 100".

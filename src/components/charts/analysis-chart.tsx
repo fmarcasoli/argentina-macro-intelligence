@@ -177,6 +177,23 @@ export function AnalysisChart({
               .map((t) => ({ value: t, label: TRANSFORM_LABEL[t] }))}
           />
         )}
+        {controls.transform && spec.transform === "index100" && (
+          <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            Base 100 en
+            <input
+              type="month"
+              value={spec.baseDate?.slice(0, 7) ?? ""}
+              onChange={(e) => set({ baseDate: e.target.value ? `${e.target.value}-01` : undefined })}
+              className="num h-7 rounded border border-border bg-background px-1.5 text-[11px] text-foreground"
+              aria-label="Mes base del índice"
+            />
+            {spec.baseDate && (
+              <button type="button" onClick={() => set({ baseDate: undefined })} className="hover:text-foreground" aria-label="Volver a la base al inicio del período">
+                ×
+              </button>
+            )}
+          </label>
+        )}
         {controls.frequency && (
           <>
             <Select

@@ -3,6 +3,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { IndicatorChart } from "@/components/charts/indicator-chart";
 import { FavoriteButton } from "@/components/workspace/favorite-button";
+import { PeriodTable } from "@/components/period-table";
+import { RangeCalculator } from "@/components/range-calculator";
 import { KindBadge, SourceBadge, StatusBadge } from "@/components/ui-kit/badges";
 import { DataUnavailable, safeLoad } from "@/components/ui-kit/data-state";
 import { PageHeader, Panel } from "@/components/ui-kit/panel";
@@ -113,6 +115,26 @@ async function IndicatorDetail({ params }: { params: Promise<{ id: string }> }) 
         <MetadataPanel ind={ind} panel={panel} />
       </div>
 
+      {ind.frequency !== "A" && ind.observation_count > 0 && (
+        <div className="mt-4">
+          <Panel title="Variación entre fechas: acumulada, por período y base 100" code="VAR" bodyClassName="p-0">
+            <Suspense fallback={<div className="h-64 animate-pulse bg-muted/30" />}>
+              <RangeData ind={ind} />
+            </Suspense>
+          </Panel>
+        </div>
+      )}
+
+      {ind.frequency !== "A" && ind.observation_count > 0 && (
+        <div className="mt-4">
+          <Panel title={ind.frequency === "Q" ? "Datos trimestre a trimestre" : ind.frequency === "S" ? "Datos semestre a semestre" : "Datos mes a mes"} code="MES" bodyClassName="p-0">
+            <Suspense fallback={<div className="h-64 animate-pulse bg-muted/30" />}>
+              <PeriodData ind={ind} />
+            </Suspense>
+          </Panel>
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
         <Panel title="Últimas observaciones" code="OBS" bodyClassName="p-0">
           <Suspense fallback={<div className="h-64 animate-pulse bg-muted/30" />}>
@@ -168,6 +190,18 @@ async function HistoryChart({ ind }: { ind: Indicator }) {
   const [[meta], points, ipc] = res.data;
   if (!meta) return null;
   return <IndicatorChart series={{ meta, points }} ipc={ipc} />;
+}
+
+async function RangeData({ ind }: { ind: Indicator }) {
+  const res = await safeLoad(() => getPoints(ind.id));
+  if (!res.ok) return <div className="p-3"><DataUnavailable error={res.error} /></div>;
+  return <RangeCalculator points={res.data} frequency={ind.frequency} unit={ind.unit} seriesName={ind.name} />;
+}
+
+async function PeriodData({ ind }: { ind: Indicator }) {
+  const res = await safeLoad(() => getPoints(ind.id));
+  if (!res.ok) return <div className="p-3"><DataUnavailable error={res.error} /></div>;
+  return <PeriodTable points={res.data} frequency={ind.frequency} unit={ind.unit} name={ind.name} />;
 }
 
 function MetadataPanel({ ind, panel }: { ind: Indicator; panel?: { label: string } }) {

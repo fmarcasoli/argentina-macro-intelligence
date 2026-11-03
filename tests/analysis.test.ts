@@ -214,6 +214,12 @@ describe("análisis completo", () => {
     expect(r.notices.some((n) => /sin inventar/.test(n.message))).toBe(true);
   });
 
+  it("base 100 en un mes elegido, aunque esté antes del período visible", () => {
+    const r = runAnalysis([base], { ...DEFAULT_SPEC, ids: ["bm"], transform: "index100", from: "2024-02-01", baseDate: "2024-01-01" });
+    expect(r.series[0].points.map((p) => p.v)).toEqual([110, 120]);
+    expect(r.series[0].unit).toBe("Índice ene 2024 = 100");
+  });
+
   it("serializa el análisis en la URL", () => {
     const spec = { ...DEFAULT_SPEC, ids: ["a", "b"], transform: "pct_yoy" as const, from: "2020-01-01", layout: "panels" as const };
     const back = specFromSearchParams(specToSearchParams(spec));

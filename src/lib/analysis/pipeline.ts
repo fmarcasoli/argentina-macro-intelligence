@@ -94,8 +94,17 @@ export function runAnalysis(data: SeriesData[], spec: AnalysisSpec, ipcMonthly?:
         message: `${m.name}: no está en pesos corrientes (${m.unit}); se muestra sin deflactar.`,
       });
     } else if (spec.transform === "index100") {
-      const inRange = pts.filter((p) => (!spec.from || p.d >= spec.from) && (!spec.to || p.d <= spec.to));
-      const r = applyTransform(inRange, target, "index100", { baseDate: spec.baseDate });
+      // Con mes base elegido, la base puede estar fuera del período visible
+      // (se calcula sobre la serie completa); si no, base = inicio del período.
+      const source = spec.baseDate ? pts : pts.filter((p) => (!spec.from || p.d >= spec.from) && (!spec.to || p.d <= spec.to));
+      const r = applyTransform(source, target, "index100", { baseDate: spec.baseDate });
+      if (spec.baseDate && r.reference && r.reference.slice(0, 7) !== spec.baseDate.slice(0, 7)) {
+        notices.push({
+          level: "info",
+          seriesId: m.id,
+          message: `${m.name}: no hay dato en ${spec.baseDate.slice(0, 7)}; la base 100 es el primer dato posterior (${formatPeriod(r.reference, target)}).`,
+        });
+      }
       pts = r.points;
       unit = r.reference ? `Índice ${formatPeriod(r.reference, target)} = 100` : "Índice base 100";
     } else if (spec.transform !== "level") {

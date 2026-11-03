@@ -5,6 +5,7 @@ import { IndicatorChart } from "@/components/charts/indicator-chart";
 import { SourceBadge, StatusBadge } from "@/components/ui-kit/badges";
 import { DataUnavailable, safeLoad } from "@/components/ui-kit/data-state";
 import { KpiTile, KpiTileSkeleton } from "@/components/ui-kit/kpi-tile";
+import { MultiPeriodTable } from "@/components/period-table";
 import { PageHeader, Panel } from "@/components/ui-kit/panel";
 import { isNominalPesos } from "@/lib/analysis/units";
 import { panelsFor, type PanelDef } from "@/lib/catalog/panels";
@@ -132,6 +133,11 @@ export function SourceCategory({
               <FeaturedChart ids={panel.headline} />
             </Suspense>
           )}
+          {panel.headline.length > 0 && (
+            <Suspense fallback={<Panel title="Mes a mes"><div className="h-64 animate-pulse bg-muted/30" /></Panel>}>
+              <MonthlySummary ids={panel.headline} />
+            </Suspense>
+          )}
           <Panel title="Series de la categoría" code={sourceId} bodyClassName="p-0">
             <Suspense fallback={<div className="h-96 animate-pulse bg-muted/30" />}>
               <CategorySeries sourceId={sourceId} panel={panel.slug} searchParams={searchParams} />
@@ -189,6 +195,21 @@ async function FeaturedChart({ ids }: { ids: string[] }) {
       }
     >
       <IndicatorChart series={{ meta: res.data.meta, points: res.data.points }} ipc={res.data.ipc} />
+    </Panel>
+  );
+}
+
+/** Cuadro mes a mes de las series destacadas de la categoría (como el resumen del INDEC). */
+async function MonthlySummary({ ids }: { ids: string[] }) {
+  const res = await safeLoad(async () => {
+    const metas = (await getSeriesMetas(ids)).filter((m) => m.last_date && ["D", "W", "M"].includes(m.frequency));
+    return Promise.all(metas.map(async (meta) => ({ meta, points: await getPoints(meta.id) })));
+  });
+  if (!res.ok) return <DataUnavailable error={res.error} />;
+  if (!res.data.length) return null;
+  return (
+    <Panel title="Mes a mes — últimos 24 meses" code="MES" bodyClassName="p-0">
+      <MultiPeriodTable series={res.data} />
     </Panel>
   );
 }
