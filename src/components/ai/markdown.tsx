@@ -5,7 +5,8 @@ import { Fragment } from "react";
  * e _itálica_. Suficiente para las respuestas del modelo y de las plantillas.
  */
 function inline(text: string, key: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*|_[^_]+_|`[^`]+`)/g).filter(Boolean);
+  // Itálica solo con _ fuera de palabras: los códigos oficiales (148.3_INIVELNAL_DICI_M_26) quedan intactos.
+  const parts = text.split(/(\*\*[^*]+\*\*|(?<![\w.])_[^_\n]+_(?![\w])|`[^`]+`)/g).filter(Boolean);
   return parts.map((p, i) => {
     if (p.startsWith("**") && p.endsWith("**")) return <strong key={`${key}-${i}`}>{p.slice(2, -2)}</strong>;
     if (p.startsWith("_") && p.endsWith("_") && p.length > 2) return <em key={`${key}-${i}`}>{p.slice(1, -1)}</em>;
