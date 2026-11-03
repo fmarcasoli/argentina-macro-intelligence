@@ -10,6 +10,7 @@ import { PageHeader, Panel } from "@/components/ui-kit/panel";
 import { isNominalPesos } from "@/lib/analysis/units";
 import { panelsFor, type PanelDef } from "@/lib/catalog/panels";
 import type { SourceId } from "@/lib/connectors/types";
+import { pickFresher, withAlternatives } from "@/lib/data/fresher";
 import { getIndicatorSnapshots, getSourceSummaries, searchCatalog } from "@/lib/data/queries";
 import { getIpcMonthly, getPanelCounts, getPoints, getSeriesMetas } from "@/lib/data/series";
 import { FREQUENCY_LABEL, formatDateTime, formatNumber, shortUnit } from "@/lib/format";
@@ -345,15 +346,18 @@ function SearchBox({ sourceId, action, placeholder }: { sourceId: SourceId; acti
 }
 
 async function KpiRow({ ids }: { ids: string[] }) {
-  const res = await safeLoad(() => getIndicatorSnapshots({ ids, sparkPoints: 40 }));
+  const res = await safeLoad(() => getIndicatorSnapshots({ ids: withAlternatives(ids), sparkPoints: 40 }));
   if (!res.ok) return <DataUnavailable error={res.error} />;
   const byId = new Map(res.data.map((r) => [r.id, r]));
-  const tiles = ids.map((id) => byId.get(id)).filter((x) => x && x.last_date);
+  // Inflación: si el BCRA ya republicó un mes más reciente, se muestra ese (con nota).
+  const tiles = ids
+    .map((id) => ({ id, ...pickFresher(id, byId), label: byId.get(id)?.name }))
+    .filter((t) => t.ind && t.ind.last_date);
   if (!tiles.length) return null;
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {tiles.map((ind) => (
-        <KpiTile key={ind!.id} ind={ind!} />
+      {tiles.map((t) => (
+        <KpiTile key={t.id} ind={t.ind!} label={t.note ? t.label : undefined} note={t.note} />
       ))}
     </div>
   );

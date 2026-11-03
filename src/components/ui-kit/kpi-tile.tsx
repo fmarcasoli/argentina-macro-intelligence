@@ -23,7 +23,7 @@ export function trendOf(ind: Pick<IndicatorSnapshot, "spark" | "unit">): { dir: 
 
 const TREND_ICON = { up: "↗", down: "↘", flat: "→" } as const;
 
-export function KpiTile({ ind, label }: { ind: IndicatorSnapshot; label?: string }) {
+export function KpiTile({ ind, label, note }: { ind: IndicatorSnapshot; label?: string; note?: string | null }) {
   const change = computeChange(ind.last_value, ind.prev_value, ind.unit);
   const trend = trendOf(ind);
   const window = ind.spark.length
@@ -78,6 +78,7 @@ export function KpiTile({ ind, label }: { ind: IndicatorSnapshot; label?: string
           )}
         </div>
       </div>
+      {note && <p className="text-[10px] leading-snug text-muted-foreground">{note}</p>}
       {ind.update_status !== "ok" && (
         <div>
           <StatusBadge status={ind.update_status} />

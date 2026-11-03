@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/ui-kit/badges";
 import { DataUnavailable, safeLoad } from "@/components/ui-kit/data-state";
 import { KpiTile, KpiTileSkeleton } from "@/components/ui-kit/kpi-tile";
 import { PageHeader, Panel } from "@/components/ui-kit/panel";
+import { pickFresher, withAlternatives } from "@/lib/data/fresher";
 import { getIndicatorSnapshots, getObservations, getSourceSummaries } from "@/lib/data/queries";
 import { formatDateTime, formatNumber } from "@/lib/format";
 
@@ -221,7 +222,7 @@ export default function OverviewPage() {
 }
 
 async function KpiSections() {
-  const res = await safeLoad(() => getIndicatorSnapshots({ ids: KPI_IDS, sparkPoints: 40 }));
+  const res = await safeLoad(() => getIndicatorSnapshots({ ids: withAlternatives(KPI_IDS), sparkPoints: 40 }));
   if (!res.ok) return <DataUnavailable error={res.error} />;
   const byId = new Map(res.data.map((r) => [r.id, r]));
   return (
@@ -234,9 +235,9 @@ async function KpiSections() {
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
             {sec.kpis.map((k) => {
-              const ind = byId.get(k.id);
+              const { ind, note } = pickFresher(k.id, byId);
               return ind ? (
-                <KpiTile key={k.id} ind={ind} label={k.label} />
+                <KpiTile key={k.id} ind={ind} label={k.label} note={note} />
               ) : (
                 <div key={k.id} className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
                   {k.label}: serie no registrada. Ejecutá <code className="num">npm run catalog:seed</code>.
