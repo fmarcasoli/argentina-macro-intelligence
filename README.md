@@ -3,10 +3,16 @@
 Plataforma profesional de análisis macroeconómico de Argentina, construida sobre
 datos oficiales del **INDEC** y del **BCRA**.
 
-**Fase 1 — Fundación:** infraestructura de datos (fuentes, catálogo, ingesta,
-calidad), base de datos, interfaz y navegación. Los módulos analíticos
-(econometría, simulador, MACRO AI, etc.) están identificados como “en
-construcción” y se desarrollan en fases posteriores.
+- **Fase 1 — Fundación:** infraestructura de datos (fuentes, catálogo, ingesta,
+  calidad), base de datos, interfaz y navegación.
+- **Fase 2 — Dashboards y análisis:** dashboard ejecutivo, paneles INDEC y BCRA
+  por categorías con buscador, fichas con gráfico interactivo, motor de
+  gráficos (transformaciones, frecuencia común, zoom, exportaciones), constructor
+  de análisis integrado INDEC + BCRA, calculadoras económicas y guardado de
+  análisis y favoritos. Detalle en [`docs/ANALYSIS.md`](docs/ANALYSIS.md).
+
+Los módulos de econometría, simulador, MACRO AI, reportes y constructor de
+indicadores siguen “en construcción” para fases posteriores.
 
 | | |
 |---|---|
@@ -16,11 +22,12 @@ construcción” y se desarrollan en fases posteriores.
 | Despliegue | Vercel (Hobby) + Supabase (Free) |
 | Tests | Vitest: conectores, normalizadores, cálculos, integración con Postgres, verificación en vivo |
 
-## Estado de los datos (2026-11-02)
+## Estado de los datos (2026-11-03)
 
-- **12.145 series** en el catálogo (1.610 BCRA + 10.527 INDEC; 905 discontinuadas por la fuente).
-- **52 series sincronizadas** (29 BCRA + 16 INDEC + 7 calculadas), **125.199 observaciones** históricas.
-- Todas las series sincronizadas verificadas contra las APIs en vivo (`npm run test:live`).
+- **12.145 series** en el catálogo (1.610 BCRA + 10.527 INDEC; 905 discontinuadas por la fuente), clasificadas en 26 categorías de panel.
+- **77 series núcleo** sincronizadas (37 BCRA + 30 INDEC + 10 calculadas), **~166.000 observaciones** históricas.
+- Cualquier otra serie del catálogo se **descarga a pedido** al abrirla y desde entonces se actualiza todos los días.
+- Las 67 series de origen verificadas contra las APIs en vivo (`npm run test:live`).
 
 Detalle de endpoints, parámetros, límites y hallazgos: [`docs/API_SOURCES.md`](docs/API_SOURCES.md).
 Esquema y reglas de calidad: [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
@@ -69,6 +76,7 @@ npm run dev
 | `npm run db:migrate` | Aplica las migraciones pendientes de `supabase/migrations` |
 | `npm run catalog:seed` | Registra/actualiza las series núcleo, verificándolas contra la fuente |
 | `npm run catalog:discover` | Registra todas las series publicadas por BCRA e INDEC (no sincronizadas) |
+| `npm run catalog:classify` | Recalcula la categoría de panel de todo el catálogo |
 | `npm run sync` | Actualización incremental (con ventana de revisión) |
 | `npm run sync:full` | Recarga completa del histórico |
 | `npm run sync -- --source=BCRA` | Solo una fuente |
@@ -95,6 +103,13 @@ errores de ambos conectores con respuestas reales grabadas
 (`tests/fixtures`), normalización de fechas/valores, rechazo y registro de
 datos inválidos, preservación de faltantes, cálculos derivados, revisiones,
 actualización incremental y restricciones de la base.
+
+Fase 2: cambio de frecuencia y períodos incompletos, transformaciones
+(variaciones, base 100, valores reales), detección de períodos faltantes,
+unidades y advertencias metodológicas, calculadoras (inflación validada contra
+el 117,8 % oficial de 2024 y contra la variación mensual publicada, Fisher,
+devaluación, salarios reales), clasificación de categorías, descarga a pedido,
+orden de series derivadas, límite de tiempo del cron y espacios de trabajo.
 
 ---
 
@@ -160,6 +175,9 @@ No hay credenciales en el código: `.env*` está en `.gitignore` (salvo `.env.ex
 | `GET /api/indicators?q=&source=&tracked=&freq=&limit=&offset=` | Catálogo |
 | `GET /api/indicators/{id}/observations?from=&to=&format=json\|csv` | Observaciones con trazabilidad (valor crudo, fecha de la fuente, tipo, publicación, revisiones) |
 | `GET /api/sync?source=BCRA\|INDEC` | Sincronización incremental (requiere `Authorization: Bearer $CRON_SECRET`) |
+| `GET /api/series?ids=a,b&ipc=1` | Series para el motor de gráficos (descarga a pedido las que no tienen datos) |
+| `GET/POST /api/workspace/analyses` · `/{id}` | Análisis guardados del espacio de trabajo |
+| `GET/POST/DELETE /api/workspace/favorites` | Series favoritas |
 
 ---
 
@@ -170,10 +188,12 @@ src/
   app/                      páginas (App Router) y rutas /api
   components/               layout, gráficos (Recharts), UI
   lib/
+    analysis/               motor de análisis y calculadoras (funciones puras)
     connectors/             BCRAConnector, INDECConnector, cliente HTTP
     normalize/              normalización, validación, fechas, series derivadas
-    ingest/                 catálogo y motor de sincronización
+    ingest/                 catálogo, motor de sincronización y descarga a pedido
     catalog/registry.ts     series núcleo (semilla del catálogo)
+    catalog/panels.ts       categorías de los paneles INDEC y BCRA
     data/queries.ts         lecturas para la interfaz
     db/                     cliente Postgres y migrador
 scripts/                    CLI: db local, migraciones, catálogo, sync
@@ -187,17 +207,17 @@ python/                     reservado para procesos estadísticos (fases futuras
 
 | # | Sección | Estado |
 |---|---|---|
-| 01 | Overview | ✅ |
-| 02 | INDEC | ✅ |
-| 03 | Banco Central | ✅ |
-| 04 | Análisis integrado | 🚧 |
+| 01 | Dashboard | ✅ (ejecutivo, 25 indicadores en 6 secciones) |
+| 02 | INDEC | ✅ (12 categorías, buscador, fichas) |
+| 03 | Banco Central | ✅ (14 categorías, buscador, fichas) |
+| 04 | Análisis integrado | ✅ (constructor INDEC + BCRA) |
 | 05 | Constructor de indicadores | 🚧 |
 | 06 | Econometría | 🚧 |
 | 07 | Simulador macroeconómico | 🚧 |
-| 08 | Calculadoras económicas | 🚧 |
+| 08 | Calculadoras económicas | ✅ (inflación, tasas reales, devaluación, salarios y agregados reales) |
 | 09 | MACRO AI | 🚧 |
 | 10 | Reportes | 🚧 |
-| 11 | Favoritos | 🚧 (tabla lista; requiere autenticación) |
+| 11 | Favoritos | ✅ (análisis guardados y series favoritas, sin login) |
 | 12 | Configuración | ✅ (estado de fuentes, sincronizaciones y errores) |
 
 Además: catálogo navegable (`/catalogo`) y ficha por indicador
@@ -208,4 +228,6 @@ revisiones, historial de sincronización y descarga CSV.
 
 - Ninguna de las dos APIs informa la **fecha de publicación** de cada dato. Para el histórico queda vacía; para datos nuevos se registra la fecha en que la plataforma los vio por primera vez (identificada como tal).
 - La API de Series de Tiempo puede tener rezago respecto del calendario del INDEC; esas series se marcan como **Desactualizadas**.
-- Autenticación de usuarios: el esquema está listo (Supabase Auth + RLS), pero el login no se implementa en la Fase 1.
+- Autenticación de usuarios: el esquema está listo (Supabase Auth + RLS), pero el login no está implementado. Favoritos y análisis guardados se asocian al navegador (cookie); si se borran las cookies se pierde el acceso a ellos.
+- Algunas series del INDEC publican porcentajes como proporción (0,079) con unidad "Porcentaje". Las series núcleo se normalizan; las abiertas a pedido se muestran tal como las publica la fuente.
+- El "tipo de cambio real" del constructor es el tipo de cambio nominal deflactado por el IPC local (no incluye inflación externa): se indica en el ejemplo.

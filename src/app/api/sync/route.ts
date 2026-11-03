@@ -29,6 +29,8 @@ export async function GET(req: NextRequest) {
     mode: "incremental",
     sourceId: source as SourceId | undefined,
     triggeredBy: "cron",
+    // Margen para recalcular series derivadas y responder antes del límite de 300 s.
+    deadline: t0 + 220_000,
   });
   const failed = outcomes.filter((o) => o.status === "failed");
   return Response.json(

@@ -1,13 +1,17 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { TimeSeriesChart } from "@/components/charts/time-series-chart";
+import Link from "next/link";
+import { IndicatorChart } from "@/components/charts/indicator-chart";
+import { FavoriteButton } from "@/components/workspace/favorite-button";
 import { KindBadge, SourceBadge, StatusBadge } from "@/components/ui-kit/badges";
 import { DataUnavailable, safeLoad } from "@/components/ui-kit/data-state";
 import { PageHeader, Panel } from "@/components/ui-kit/panel";
 import { SyncRunsTable } from "@/components/ui-kit/sync-runs-table";
+import { findPanel } from "@/lib/catalog/panels";
+import { isNominalPesos } from "@/lib/analysis/units";
+import { ensureIndicator, getIpcMonthly, getPoints, getSeriesMetas } from "@/lib/data/series";
 import {
   getIndicator,
-  getObservations,
   getRecentObservations,
   getRevisions,
   getSyncErrors,
@@ -19,7 +23,6 @@ import {
   formatDateTime,
   formatNumber,
   formatValue,
-  isPercentUnit,
   periodLabel,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -40,10 +43,20 @@ export default function IndicatorPage({ params }: PageProps<"/indicadores/[id]">
 
 async function IndicatorDetail({ params }: { params: Promise<{ id: string }> }) {
   const id = decodeURIComponent((await params).id);
-  const res = await safeLoad(() => getIndicator(id));
-  if (!res.ok) return <DataUnavailable error={res.error} />;
-  const ind = res.data;
-  if (!ind) notFound();
+  const first = await safeLoad(() => getIndicator(id));
+  if (!first.ok) return <DataUnavailable error={first.error} />;
+  if (!first.data) notFound();
+
+  // Serie del catálogo sin datos: se descarga ahora desde la API oficial.
+  let onDemand: { status: string; error?: string } | null = null;
+  let ind = first.data;
+  if (ind.observation_count === 0 && ind.value_kind !== "calculated") {
+    const r = await safeLoad(() => ensureIndicator(id));
+    onDemand = r.ok ? { status: r.data.status, error: r.data.status === "failed" ? r.data.error : undefined } : { status: "failed", error: r.error instanceof Error ? r.error.message : String(r.error) };
+    const again = await safeLoad(() => getIndicator(id));
+    if (again.ok && again.data) ind = again.data;
+  }
+  const panel = ind.panel ? findPanel(ind.source_id, ind.panel) : undefined;
 
   return (
     <>
@@ -55,19 +68,35 @@ async function IndicatorDetail({ params }: { params: Promise<{ id: string }> }) 
         <SourceBadge source={ind.source_id} />
         <KindBadge kind={ind.value_kind} />
         <StatusBadge status={ind.update_status} />
+        <FavoriteButton indicatorId={ind.id} />
         <a
           href={`/api/indicators/${encodeURIComponent(ind.id)}/observations?format=csv`}
           className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          Descargar CSV
+          CSV con trazabilidad
         </a>
       </PageHeader>
 
-      {!ind.is_tracked && (
-        <div className="mb-4 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-          Serie registrada en el catálogo pero no sincronizada. Para empezar a descargarla:{" "}
-          <code className="num text-foreground">update indicators set is_tracked = true where id = &apos;{ind.id}&apos;;</code>{" "}
-          y luego <code className="num text-foreground">npm run sync -- {ind.id}</code>.
+      {panel && (
+        <nav className="-mt-2 mb-4 text-[11px] text-muted-foreground" aria-label="Ubicación">
+          <Link href={ind.source_id === "INDEC" ? "/indec" : "/bcra"} className="hover:text-amber">
+            {ind.source_id === "INDEC" ? "Panel INDEC" : "Panel Banco Central"}
+          </Link>{" "}
+          /{" "}
+          <Link href={`/${ind.source_id === "INDEC" ? "indec" : "bcra"}/${panel.slug}`} className="hover:text-amber">
+            {panel.label}
+          </Link>
+        </nav>
+      )}
+      {onDemand?.status === "synced" && (
+        <div className="mb-4 rounded-md border border-positive/30 bg-positive/5 p-3 text-xs text-foreground/90">
+          Esta serie se descargó recién desde la API oficial del {ind.source_id} ({formatNumber(ind.observation_count, { decimals: 0 })}{" "}
+          observaciones) y desde ahora se actualiza todos los días.
+        </div>
+      )}
+      {onDemand?.status === "failed" && (
+        <div className="mb-4 rounded-md border border-negative/30 bg-negative/5 p-3 text-xs text-foreground/90">
+          No se pudo descargar la serie desde la fuente: {onDemand.error}. El error quedó registrado; no se muestran datos estimados.
         </div>
       )}
       {ind.notes && (
@@ -81,7 +110,7 @@ async function IndicatorDetail({ params }: { params: Promise<{ id: string }> }) 
             <HistoryChart ind={ind} />
           </Suspense>
         </Panel>
-        <MetadataPanel ind={ind} />
+        <MetadataPanel ind={ind} panel={panel} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
@@ -131,29 +160,24 @@ function LatestValue({ ind }: { ind: Indicator }) {
 }
 
 async function HistoryChart({ ind }: { ind: Indicator }) {
-  const res = await safeLoad(() => getObservations(ind.id));
-  if (!res.ok) return <DataUnavailable error={res.error} />;
-  const bar = ind.value_kind === "calculated" || (isPercentUnit(ind.unit) && ind.frequency !== "D");
-  return (
-    <TimeSeriesChart
-      series={[{ key: "v", label: ind.name, points: res.data }]}
-      frequency={ind.frequency}
-      unit={ind.unit}
-      kind={bar && ind.frequency !== "D" ? "bar" : "line"}
-      zeroLine={bar}
-      height={320}
-      defaultRange={ind.frequency === "D" ? "3A" : "10A"}
-    />
+  const nominal = isNominalPesos(ind.unit, ind.name);
+  const res = await safeLoad(() =>
+    Promise.all([getSeriesMetas([ind.id]), getPoints(ind.id), nominal ? getIpcMonthly() : Promise.resolve(undefined)]),
   );
+  if (!res.ok) return <DataUnavailable error={res.error} />;
+  const [[meta], points, ipc] = res.data;
+  if (!meta) return null;
+  return <IndicatorChart series={{ meta, points }} ipc={ipc} />;
 }
 
-function MetadataPanel({ ind }: { ind: Indicator }) {
+function MetadataPanel({ ind, panel }: { ind: Indicator; panel?: { label: string } }) {
   const rows: [string, React.ReactNode][] = [
     ["ID interno", <code key="id" className="num">{ind.id}</code>],
     ["Institución de origen", ind.source_id],
     ["Código de origen", ind.source_code ? <code key="sc" className="num">{ind.source_code}</code> : "— (serie calculada)"],
-    ["Categoría", ind.category],
-    ["Subcategoría", ind.subcategory],
+    ["Categoría (fuente)", ind.category],
+    ["Subcategoría / dataset", ind.subcategory],
+    ["Panel", panel?.label],
     ["Unidad", ind.unit],
     ["Frecuencia", FREQUENCY_LABEL[ind.frequency]],
     ["Moneda", ind.currency],
@@ -163,7 +187,8 @@ function MetadataPanel({ ind }: { ind: Indicator }) {
     ["Rango según la fuente", <span key="r" className="num">{ind.source_start_date ?? "?"} → {ind.source_last_date ?? "?"}</span>],
     ["Observaciones", <span key="n" className="num">{formatNumber(ind.observation_count, { decimals: 0 })}</span>],
     ["Estado", <StatusBadge key="st" status={ind.update_status} />],
-    ["Última sincronización", <span key="ls" className="num">{formatDateTime(ind.last_synced_at)}</span>],
+    ["Última actualización", <span key="ls" className="num">{formatDateTime(ind.last_synced_at)}</span>],
+    ["Descarga", ind.tracked_on_demand_at ? "A pedido (al consultarla) y luego diaria" : ind.is_tracked ? "Serie núcleo, actualización diaria" : "Sin sincronizar"],
     ["Último error", ind.last_error],
     [
       "Endpoint",

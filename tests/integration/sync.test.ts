@@ -11,6 +11,7 @@ import { applyMigrations } from "@/lib/db/migrate";
 import type { ConnectorMap } from "@/lib/ingest/connectors";
 import { registerDiscovered } from "@/lib/ingest/catalog";
 import { syncAll } from "@/lib/ingest/sync";
+import { ensureSeriesData } from "@/lib/ingest/on-demand";
 
 const url = process.env.TEST_DATABASE_URL;
 type Sql = postgres.Sql<Record<string, never>>;
@@ -155,6 +156,79 @@ describe.skipIf(!url)("motor de sincronización (Postgres real)", () => {
       { id: "bcra-T9", name: "Serie nueva", is_tracked: false },
       { id: "t.mensual", name: "Serie mensual de prueba", is_tracked: true },
     ]);
+  });
+
+  it("descarga a pedido una serie descubierta y la suma a la actualización diaria", async () => {
+    fake.data.T9 = [
+      { date: "2026-10-28", value: 5 },
+      { date: "2026-10-29", value: 6 },
+    ];
+    const r = await ensureSeriesData(sql, connectors, "bcra-T9");
+    expect(r.status).toBe("synced");
+    const [ind] = await sql<{ is_tracked: boolean; observation_count: number; on_demand: boolean; panel: string | null }[]>`
+      select is_tracked, observation_count, tracked_on_demand_at is not null as on_demand, panel
+      from indicators where id = 'bcra-T9'`;
+    expect(ind).toMatchObject({ is_tracked: true, observation_count: 2, on_demand: true });
+    expect(ind.panel).toBeTruthy(); // clasificada al descubrirla
+    const [run] = await sql<{ triggered_by: string; mode: string }[]>`
+      select triggered_by, mode from sync_runs where indicator_id = 'bcra-T9'`;
+    expect(run).toEqual({ triggered_by: "on_demand", mode: "full" });
+    // segunda consulta: ya tiene datos, no vuelve a descargar
+    expect((await ensureSeriesData(sql, connectors, "bcra-T9")).status).toBe("ready");
+    expect((await ensureSeriesData(sql, connectors, "no-existe")).status).toBe("not_found");
+  });
+
+  it("series derivadas nuevas: acumulada en el año y deflactada, en orden de dependencias", async () => {
+    await sql`
+      insert into indicators (id, source_id, source_code, name, category, unit, frequency, is_tracked)
+      values ('t.ipc', 'INDEC', 'P1', 'IPC prueba', 'Test', 'Índice', 'M', true),
+             ('t.sal', 'INDEC', 'W1', 'Salario prueba', 'Test', 'Índice', 'M', true)`;
+    await sql`
+      insert into indicators (id, source_id, name, category, unit, frequency, value_kind, derivation, is_tracked)
+      values ('t.z_real_yoy', 'INDEC', 'Real i.a.', 'Test', '%', 'M', 'calculated', ${sql.json({ op: "pct_change", base: "t.a_real", lag: 12 })}, true),
+             ('t.a_real', 'INDEC', 'Real', 'Test', 'Índice', 'M', 'calculated', ${sql.json({ op: "deflate", nominal: "t.sal", deflator: "t.ipc", base: "2024-12-01" })}, true),
+             ('t.ytd', 'INDEC', 'Acumulada', 'Test', '%', 'M', 'calculated', ${sql.json({ op: "ytd_change", base: "t.ipc" })}, true)`;
+    const months = Array.from({ length: 14 }, (_, i) => {
+      const d = new Date(Date.UTC(2024, 11 + i, 1));
+      return d.toISOString().slice(0, 10);
+    });
+    fake.data.P1 = months.map((d, i) => ({ date: d, value: 100 * Math.pow(1.02, i) }));
+    fake.data.W1 = months.map((d, i) => ({ date: d, value: 100 * Math.pow(1.03, i) }));
+    const out = await syncAll(sql, connectors, { mode: "full", today, sourceId: "INDEC" });
+    const order = out.map((o) => o.indicatorId);
+    expect(order.indexOf("t.a_real")).toBeLessThan(order.indexOf("t.z_real_yoy"));
+    expect(out.every((o) => o.status === "success")).toBe(true);
+
+    const [ytd] = await sql<{ value: number }[]>`select value from observations where indicator_id = 't.ytd' and ref_date = '2025-03-01'`;
+    expect(ytd.value).toBeCloseTo((Math.pow(1.02, 3) - 1) * 100, 8);
+    const [real] = await sql<{ value: number }[]>`select value from observations where indicator_id = 't.a_real' and ref_date = '2025-12-01'`;
+    expect(real.value).toBeCloseTo(Math.pow(1.03 / 1.02, 12) * 100, 6);
+    const [yoy] = await sql<{ value: number }[]>`select value from observations where indicator_id = 't.z_real_yoy' and ref_date = '2025-12-01'`;
+    expect(yoy.value).toBeCloseTo((Math.pow(1.03 / 1.02, 12) - 1) * 100, 6);
+  });
+
+  it("con tiempo agotado no descarga más series de origen pero recalcula las derivadas", async () => {
+    const out = await syncAll(sql, connectors, { mode: "incremental", today, sourceId: "INDEC", deadline: Date.now() - 1 });
+    expect(out.every((o) => o.indicatorId.startsWith("t.") && ["t.ytd", "t.a_real", "t.z_real_yoy"].includes(o.indicatorId))).toBe(true);
+  });
+
+  it("espacios de trabajo: análisis guardados y favoritos aislados por espacio", async () => {
+    const [w1] = await sql<{ id: string }[]>`insert into workspaces (token_hash) values ('h1') returning id`;
+    const [w2] = await sql<{ id: string }[]>`insert into workspaces (token_hash) values ('h2') returning id`;
+    await sql`insert into saved_analyses (workspace_id, title, kind, definition, indicator_ids)
+              values (${w1.id}, 'A', 'analysis', ${sql.json({ ids: ["t.ipc"] })}, ${["t.ipc"]})`;
+    await sql`insert into workspace_favorites (workspace_id, indicator_id) values (${w1.id}, 't.ipc')`;
+    await expect(sql`insert into workspace_favorites (workspace_id, indicator_id) values (${w1.id}, 't.ipc')`).rejects.toThrow(/duplicate key/);
+    const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from saved_analyses where workspace_id = ${w2.id}`;
+    expect(n).toBe(0);
+    // un análisis sin dueño no se puede guardar
+    await expect(
+      sql`insert into saved_analyses (title, kind, definition) values ('x', 'analysis', ${sql.json({})})`,
+    ).rejects.toThrow(/saved_analyses_owner/);
+    // borrar el espacio borra sus datos
+    await sql`delete from workspaces where id = ${w1.id}`;
+    const [{ m }] = await sql<{ m: number }[]>`select count(*)::int as m from workspace_favorites where workspace_id = ${w1.id}`;
+    expect(m).toBe(0);
   });
 
   it("la base impide duplicados y valores calculados sin definición", async () => {

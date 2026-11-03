@@ -4,7 +4,7 @@ import { searchCatalog } from "@/lib/data/queries";
 
 /**
  * Catálogo de indicadores.
- * GET /api/indicators?q=ipc&source=INDEC&tracked=1&freq=M&limit=50&offset=0
+ * GET /api/indicators?q=ipc&source=INDEC&panel=precios&tracked=1&freq=M&limit=50&offset=0
  */
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     const page = await searchCatalog({
       q: p.get("q") ?? undefined,
       sourceId: source === "BCRA" || source === "INDEC" ? (source as SourceId) : undefined,
+      panel: /^[a-z-]{2,40}$/.test(p.get("panel") ?? "") ? (p.get("panel") as string) : undefined,
       tracked: tracked === "1" ? true : tracked === "0" ? false : undefined,
       frequency: freq && ["D", "W", "M", "Q", "S", "A"].includes(freq) ? (freq as Frequency) : undefined,
       includeDiscontinued: p.get("discontinued") === "1",

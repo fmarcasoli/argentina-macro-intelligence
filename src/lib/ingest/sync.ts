@@ -2,7 +2,7 @@ import type postgres from "postgres";
 import { ConnectorError, type Frequency, type SourceId } from "../connectors/types";
 import { addDays } from "../normalize/dates";
 import { todayAR } from "../utils/time";
-import { pctChange, ratio, type Derivation, type Point } from "../normalize/derive";
+import { deflate, derivationInputs, pctChange, ratio, ytdChange, type Derivation, type Point } from "../normalize/derive";
 import { normalizeObservations, type NormalizedObservation } from "../normalize/normalize";
 import type { ConnectorMap } from "./connectors";
 
@@ -306,10 +306,20 @@ export async function syncDerivedIndicator(sql: Sql, ind: IndicatorRow, opts: Sy
     const d = ind.derivation;
     if (!d) throw new Error(`El indicador ${ind.id} no tiene definición de cálculo`);
     let points: Point[];
-    if (d.op === "pct_change") {
-      points = pctChange(await loadPoints(sql, d.base), ind.frequency, d.lag);
-    } else {
-      points = ratio(await loadPoints(sql, d.numerator), await loadPoints(sql, d.denominator), d.scale ?? 1);
+    switch (d.op) {
+      case "pct_change":
+        points = pctChange(await loadPoints(sql, d.base), ind.frequency, d.lag);
+        break;
+      case "ytd_change":
+        if (ind.frequency !== "M") throw new Error("La variación acumulada en el año requiere una serie mensual");
+        points = ytdChange(await loadPoints(sql, d.base));
+        break;
+      case "ratio":
+        points = ratio(await loadPoints(sql, d.numerator), await loadPoints(sql, d.denominator), d.scale ?? 1);
+        break;
+      case "deflate":
+        points = deflate(await loadPoints(sql, d.nominal), await loadPoints(sql, d.deflator), d.base);
+        break;
     }
     base.fetched = points.length;
     const obs: NormalizedObservation[] = points.map((p) => ({
@@ -337,6 +347,35 @@ export interface SyncAllOptions extends SyncOptions {
   sourceId?: SourceId;
   ids?: string[];
   onProgress?: (o: SyncOutcome) => void;
+  /**
+   * Momento (Date.now()) a partir del cual no se descargan más series de origen.
+   * Las series se procesan de la menos a la más recientemente sincronizada, así
+   * que si el tiempo no alcanza la próxima ejecución continúa por las pendientes.
+   * Las series calculadas se recalculan siempre.
+   */
+  deadline?: number;
+}
+
+/** Ordena las series calculadas para que cada una se procese después de sus insumos calculados. */
+export function orderDerived<T extends { id: string; derivation: Derivation | null }>(rows: T[]): T[] {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const done = new Set<string>();
+  const visiting = new Set<string>();
+  const out: T[] = [];
+  const visit = (r: T) => {
+    if (done.has(r.id)) return;
+    if (visiting.has(r.id)) throw new Error(`Dependencia circular en series calculadas: ${r.id}`);
+    visiting.add(r.id);
+    for (const dep of r.derivation ? derivationInputs(r.derivation) : []) {
+      const d = byId.get(dep);
+      if (d) visit(d);
+    }
+    visiting.delete(r.id);
+    done.add(r.id);
+    out.push(r);
+  };
+  for (const r of rows) visit(r);
+  return out;
 }
 
 /**
@@ -350,14 +389,19 @@ export async function syncAll(sql: Sql, connectors: ConnectorMap, opts: SyncAllO
     where is_tracked
       ${opts.sourceId ? sql`and source_id = ${opts.sourceId}` : sql``}
       ${opts.ids?.length ? sql`and id = any(${opts.ids})` : sql``}
-    order by (value_kind = 'calculated'), source_id, id`;
+    order by (value_kind = 'calculated'), (tracked_on_demand_at is not null), last_synced_at nulls first, source_id, id`;
 
+  const sources = rows.filter((r) => r.value_kind !== "calculated");
+  const derived = orderDerived(rows.filter((r) => r.value_kind === "calculated"));
   const outcomes: SyncOutcome[] = [];
-  for (const ind of rows) {
-    const o =
-      ind.value_kind === "calculated"
-        ? await syncDerivedIndicator(sql, ind, opts)
-        : await syncSourceIndicator(sql, connectors, ind, opts);
+  for (const ind of sources) {
+    if (opts.deadline !== undefined && Date.now() > opts.deadline) break;
+    const o = await syncSourceIndicator(sql, connectors, ind, opts);
+    outcomes.push(o);
+    opts.onProgress?.(o);
+  }
+  for (const ind of derived) {
+    const o = await syncDerivedIndicator(sql, ind, opts);
     outcomes.push(o);
     opts.onProgress?.(o);
   }

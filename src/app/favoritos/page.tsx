@@ -1,10 +1,17 @@
-import { UnderConstruction } from "@/components/ui-kit/under-construction";
-import { findSection } from "@/lib/nav";
+import { FavoritesView } from "@/components/workspace/favorites-view";
+import { PageHeader } from "@/components/ui-kit/panel";
 
-const section = findSection("/favoritos")!;
+export const metadata = { title: "Favoritos" };
 
-export const metadata = { title: section.label };
-
-export default function Page() {
-  return <UnderConstruction section={section} />;
+export default function FavoritesPage() {
+  return (
+    <>
+      <PageHeader
+        code="11 · FAV"
+        title="Favoritos e investigaciones guardadas"
+        description="Recuperá tus análisis (series, período, frecuencia y transformación) y tus series favoritas."
+      />
+      <FavoritesView />
+    </>
+  );
 }

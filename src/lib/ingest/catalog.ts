@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type postgres from "postgres";
 import type { DiscoveredSeries, SourceId } from "../connectors/types";
 import { DERIVED_SERIES, SOURCE_SERIES, type SourceSeriesDef } from "../catalog/registry";
+import { classifyPanel, type ClassifiableSeries } from "../catalog/panels";
 import type { ConnectorMap } from "./connectors";
 
 type Sql = postgres.Sql<Record<string, never>>;
@@ -69,7 +70,28 @@ export async function seedCatalog(sql: Sql, connectors: ConnectorMap, opts: { on
         derivation = excluded.derivation, methodology = excluded.methodology, tags = excluded.tags`;
     report.registered.push(d.id);
   }
+  await refreshPanels(sql);
   return report;
+}
+
+/**
+ * Asigna la categoría de panel (indicators.panel) a todas las series según las
+ * reglas de src/lib/catalog/panels.ts. Solo escribe las que cambian.
+ */
+export async function refreshPanels(sql: Sql): Promise<number> {
+  const rows = await sql<(ClassifiableSeries & { id: string; panel: string | null })[]>`
+    select id, source_id, source_code, category, subcategory, name, panel from indicators`;
+  const changed = rows
+    .map((r) => ({ id: r.id, panel: classifyPanel(r), prev: r.panel }))
+    .filter((r) => r.panel !== r.prev);
+  for (let i = 0; i < changed.length; i += 2000) {
+    const chunk = changed.slice(i, i + 2000);
+    await sql`
+      update indicators i set panel = v.panel
+      from (select * from unnest(${chunk.map((c) => c.id)}::text[], ${chunk.map((c) => c.panel)}::text[]) as v(id, panel)) v
+      where i.id = v.id`;
+  }
+  return changed.length;
 }
 
 async function upsertTrackedIndicator(sql: Sql, def: SourceSeriesDef, meta: DiscoveredSeries, methodology: string | null) {
@@ -146,5 +168,6 @@ export async function registerDiscovered(sql: Sql, sourceId: SourceId, series: D
           else excluded.update_status end`;
     n += res.count;
   }
+  await refreshPanels(sql);
   return n;
 }

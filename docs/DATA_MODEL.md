@@ -17,7 +17,7 @@ app_settings · schema_migrations
 | Tabla | Contenido | Claves / restricciones |
 |---|---|---|
 | `sources` | Fuentes oficiales (BCRA, INDEC): API, URL base, límites | PK `id` |
-| `indicators` | **Catálogo**: una fila por serie (ID interno, institución, nombre, categoría, subcategoría, descripción, unidad, frecuencia, código de origen, endpoint, fecha inicial, fecha del último dato, metodología, estado de actualización) | PK `id`; único `(source_id, source_code, value_kind)`; checks: una serie calculada debe tener `derivation`, una con `scale ≠ 1` debe ser `normalized` |
+| `indicators` | **Catálogo** (Fase 2: `panel` = categoría de navegación; `tracked_on_demand_at` = descargada a pedido): una fila por serie (ID interno, institución, nombre, categoría, subcategoría, descripción, unidad, frecuencia, código de origen, endpoint, fecha inicial, fecha del último dato, metodología, estado de actualización) | PK `id`; único `(source_id, source_code, value_kind)`; checks: una serie calculada debe tener `derivation`, una con `scale ≠ 1` debe ser `normalized` |
 | `indicator_metadata` | Payload de metadatos crudo de la fuente, versionado por hash | único `(indicator_id, content_hash)` |
 | `observations` | Valores históricos | PK `(indicator_id, ref_date)` → **imposible duplicar** |
 | `observation_revisions` | Valor anterior cada vez que la fuente corrige un dato | lo llena un trigger |
@@ -26,8 +26,10 @@ app_settings · schema_migrations
 | `profiles` | Usuarios (en Supabase, FK a `auth.users`) | |
 | `user_settings` | Configuración por usuario (clave/valor JSON) | PK `(user_id, key)` |
 | `app_settings` | Configuración global (ventanas de revisión, umbrales) | PK `key` |
-| `favorites` | Series favoritas por usuario | PK `(user_id, indicator_id)` |
-| `saved_analyses` | Análisis guardados (definición JSON) | índice por usuario |
+| `favorites` | Series favoritas por usuario (Supabase Auth, fase futura) | PK `(user_id, indicator_id)` |
+| `saved_analyses` | Análisis guardados (definición JSON): de un usuario o de un espacio de trabajo | check: `user_id` o `workspace_id`; índices por dueño |
+| `workspaces` | Espacios de trabajo sin login: hash SHA-256 del token de la cookie | único `token_hash` |
+| `workspace_favorites` | Series favoritas del espacio de trabajo | PK `(workspace_id, indicator_id)` |
 
 ## Calidad de datos
 

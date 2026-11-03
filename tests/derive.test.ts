@@ -84,3 +84,54 @@ describe("incrementalFrom", () => {
     expect(incrementalFrom("2026-08-01", "M", lookback)).toBe("2024-08-01");
   });
 });
+
+import { deflate as deflateSeries, derivationInputs, ytdChange } from "@/lib/normalize/derive";
+import { orderDerived } from "@/lib/ingest/sync";
+
+describe("series derivadas de la Fase 2", () => {
+  it("inflación acumulada en el año contra diciembre anterior", () => {
+    const pts = [
+      { refDate: "2024-12-01", value: 100 },
+      { refDate: "2025-01-01", value: 102 },
+      { refDate: "2025-02-01", value: 104.04 },
+    ];
+    expect(ytdChange(pts)).toEqual([
+      { refDate: "2025-01-01", value: 2 },
+      { refDate: "2025-02-01", value: 4.04 },
+    ]);
+    // sin diciembre base no se emite el punto
+    expect(ytdChange(pts.slice(1))).toEqual([]);
+  });
+
+  it("deflactar con base común", () => {
+    const w = [
+      { refDate: "2016-12-01", value: 50 },
+      { refDate: "2017-01-01", value: 60 },
+      { refDate: "2017-02-01", value: null },
+    ];
+    const p = [
+      { refDate: "2016-12-01", value: 100 },
+      { refDate: "2017-01-01", value: 110 },
+      { refDate: "2017-02-01", value: 120 },
+    ];
+    const r = deflateSeries(w, p, "2016-12-01");
+    expect(r[0].value).toBe(100);
+    expect(r[1].value).toBeCloseTo((60 / 50 / 1.1) * 100, 8);
+    expect(r[2].value).toBeNull();
+    expect(() => deflateSeries(w, p, "2015-01-01")).toThrow(/base/);
+  });
+
+  it("ordena series calculadas según sus dependencias", () => {
+    const rows = [
+      { id: "calc.b", derivation: { op: "pct_change" as const, base: "calc.a", lag: 12 } },
+      { id: "calc.a", derivation: { op: "deflate" as const, nominal: "x", deflator: "y", base: "2016-12-01" } },
+    ];
+    expect(orderDerived(rows).map((r) => r.id)).toEqual(["calc.a", "calc.b"]);
+    expect(derivationInputs(rows[1].derivation)).toEqual(["x", "y"]);
+    const cyc = [
+      { id: "a", derivation: { op: "ytd_change" as const, base: "b" } },
+      { id: "b", derivation: { op: "ytd_change" as const, base: "a" } },
+    ];
+    expect(() => orderDerived(cyc)).toThrow(/circular/);
+  });
+});

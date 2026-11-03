@@ -105,6 +105,12 @@ Documentación oficial: <https://www.bcra.gob.ar/apis-banco-central/>
 | bcra.tasa_politica | 160 | Tasa de política monetaria (discontinuada) | D | % TNA |
 | bcra.inflacion_mensual / interanual | 27 / 28 | Inflación publicada por BCRA | M | % |
 | bcra.rem_inflacion_12m | 29 | REM: inflación esperada 12 meses | M | % |
+| bcra.m2_transaccional | 197 | M2 transaccional del sector privado | D | Millones de ARS |
+| bcra.depositos_privados_pesos | 100 | Depósitos del sector privado en pesos (incluye CEDROS) | D | Millones de ARS |
+| bcra.depositos_privados_usd | 108 | Depósitos del sector privado en dólares | D | Millones de USD |
+| bcra.prestamos_privados_usd | 125 | Préstamos al sector privado en dólares | D | Millones de USD |
+| bcra.prestamos_personales / tarjetas / hipotecarios | 114 / 115 / 112 | Préstamos por línea (pesos) | D | Millones de ARS |
+| bcra.liquidez_pesos | 1221 | Liquidez en pesos de las entidades | D | % de depósitos |
 
 ---
 
@@ -151,6 +157,7 @@ Código: <https://github.com/datosgobar/series-tiempo-ar-api>
 ### Hallazgos de la verificación
 
 - **`is_percentage` no es confiable**: la variación mensual del IPC (`145.3_INGNACUAL_DICI_M_38`) viene como proporción (`0.0166` = 1,66 %) y la API informa `is_percentage: false`. Por eso el factor de escala (`scale = 100`) se declara explícitamente en el registro y el dato se marca como `normalized`.
+- Lo mismo ocurre con las tasas de la EPH (desocupación `0.079`, empleo, actividad) y la pobreza (`0.323`), aunque la unidad publicada dice "Porcentaje". En las series núcleo se normalizan (×100); las series del catálogo abiertas a pedido conservan el valor tal como lo publica la fuente.
 - La serie de la API puede llevar un rezago respecto del calendario del INDEC (ej. EMAE y salarios al 2026-11-02 llegan hasta julio). La plataforma lo refleja con el estado **Desactualizada**.
 
 ### Series sincronizadas (INDEC)
@@ -173,6 +180,17 @@ Código: <https://github.com/datosgobar/series-tiempo-ar-api>
 | indec.exportaciones | 74.3_IET_0_M_16 | Exportaciones totales (millones USD) | M |
 | indec.importaciones | 74.3_IIT_0_M_25 | Importaciones totales (millones USD) | M |
 | indec.saldo_comercial | 74.3_ISC_0_M_19 | Saldo comercial (millones USD) | M |
+| indec.desempleo | 45.2_ECTDT_0_T_33 | Tasa de desocupación, 31 aglomerados (EPH; ×100, normalizada) | Q |
+| indec.tasa_empleo | 44.2_ECTET_0_T_30 | Tasa de empleo (×100, normalizada) | Q |
+| indec.tasa_actividad | 43.2_ECTAT_0_T_33 | Tasa de actividad (×100, normalizada) | Q |
+| indec.pobreza | 64.2_POBLACION_NUA_0_0_34_74 | Personas bajo la línea de pobreza, total aglomerados (×100, normalizada) | S |
+| indec.gini | 65.1_CGI_0_0_21 | Coeficiente de Gini del ingreso per cápita familiar | Q |
+| indec.isac / isac_desest | 33.2_ISAC_NIVELRAL_0_M_18_63 / 33.2_ISAC_SIN_EDAD_0_M_23_56 | ISAC nivel general / desestacionalizado | M |
+| indec.ipi_manufacturero / _desest | 453.1_SERIE_ORIGNAL_0_0_14_46 / 453.1_SERIE_DESEADA_0_0_24_58 | IPI manufacturero | M |
+| indec.ventas_supermercados | 455.1_VENTAS_TOTNTA_0_M_26_88 | Ventas totales en supermercados (miles de pesos) | M |
+| indec.poblacion | 9.2_P_2004_T_9 | Población de Argentina | Q |
+| indec.pib_per_capita_usd | 9.2_PPCDC_2004_T_33 | PIB per cápita en dólares corrientes | Q |
+| indec.viajeros / pernoctaciones | 457.1_VIAJEROS_TLES_0_M_16_50 / 457.1_PERNOCTACILES_0_M_22_51 | Encuesta de Ocupación Hotelera | M |
 
 ### Series calculadas por la plataforma
 
@@ -185,6 +203,9 @@ Código: <https://github.com/datosgobar/series-tiempo-ar-api>
 | calc.emae_desest_var_mensual | variación mensual | indec.emae_desest |
 | calc.pib_real_var_interanual | variación vs. mismo trimestre año anterior | indec.pib_real |
 | calc.salarios_var_interanual | variación interanual | indec.salarios |
+| calc.ipc_var_acumulada | (IPCₜ / IPC_dic(año−1) − 1) × 100 | indec.ipc_nivel_general |
+| calc.salarios_reales | (Wₜ / W_dic16) / (IPCₜ / IPC_dic16) × 100 | indec.salarios, indec.ipc_nivel_general |
+| calc.salarios_reales_var_interanual | variación interanual | calc.salarios_reales |
 
 Validación cruzada: `calc.ipc_var_mensual` coincide con la variación publicada
 por el INDEC (`indec.ipc_var_mensual`) hasta la 12.ª cifra, y con la del BCRA
@@ -207,3 +228,18 @@ anterior queda en `observation_revisions`.
 Umbrales de "desactualizada" (`sync.stale_after_days`): días sin dato nuevo
 contados desde el **fin** del período de referencia (diaria 7, mensual 75,
 trimestral 200).
+
+### Descarga a pedido (Fase 2)
+
+Las ~12.000 series del catálogo se registran sin datos. La primera vez que
+alguien abre una de ellas (ficha del indicador o constructor de análisis) se
+descarga su histórico completo con el mismo motor de ingesta
+(`src/lib/ingest/on-demand.ts`): normalización, validación, registro de la
+corrida (`sync_runs.triggered_by = 'on_demand'`) y de los errores. Desde ese
+momento queda incluida en la actualización diaria
+(`indicators.tracked_on_demand_at`).
+
+Para respetar el tiempo máximo de la función (300 s), el cron procesa las
+series de origen de la menos a la más recientemente sincronizada y deja de
+descargar a los 220 s; las pendientes siguen en la ejecución siguiente. Las
+series calculadas se recalculan siempre, en orden de dependencias.

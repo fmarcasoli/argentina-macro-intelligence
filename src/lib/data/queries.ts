@@ -40,6 +40,8 @@ export interface Indicator {
   last_error: string | null;
   tags: string[];
   notes: string | null;
+  panel: string | null;
+  tracked_on_demand_at: Date | null;
 }
 
 export interface SeriesPoint {
@@ -254,13 +256,14 @@ export async function getSourceSummaries(): Promise<SourceSummary[]> {
 }
 
 export interface CatalogPage {
-  rows: Pick<Indicator, "id" | "source_id" | "source_code" | "name" | "category" | "subcategory" | "unit" | "frequency" | "source_last_date" | "last_date" | "update_status" | "is_tracked" | "value_kind">[];
+  rows: Pick<Indicator, "id" | "source_id" | "source_code" | "name" | "category" | "subcategory" | "unit" | "frequency" | "source_last_date" | "last_date" | "update_status" | "is_tracked" | "value_kind" | "panel">[];
   total: number;
 }
 
 export async function searchCatalog(opts: {
   q?: string;
   sourceId?: SourceId;
+  panel?: string;
   tracked?: boolean;
   frequency?: Frequency;
   includeDiscontinued?: boolean;
@@ -272,21 +275,23 @@ export async function searchCatalog(opts: {
   const where = sql`
     where true
       ${opts.sourceId ? sql`and source_id = ${opts.sourceId}` : sql``}
+      ${opts.panel ? sql`and panel = ${opts.panel}` : sql``}
       ${opts.tracked !== undefined ? sql`and is_tracked = ${opts.tracked}` : sql``}
       ${opts.frequency ? sql`and frequency = ${opts.frequency}` : sql``}
       ${opts.includeDiscontinued ? sql`` : sql`and update_status <> 'discontinued'`}
       ${terms.reduce(
         (acc, t) =>
-          sql`${acc} and (name ilike ${"%" + t + "%"} or category ilike ${"%" + t + "%"}
-                  or coalesce(subcategory,'') ilike ${"%" + t + "%"} or coalesce(source_code,'') ilike ${"%" + t + "%"})`,
+          sql`${acc} and (unaccent_text(name) ilike unaccent_text(${"%" + t + "%"}) or category ilike ${"%" + t + "%"}
+                  or unaccent_text(coalesce(subcategory,'')) ilike unaccent_text(${"%" + t + "%"})
+                  or coalesce(source_code,'') ilike ${"%" + t + "%"} or id ilike ${"%" + t + "%"})`,
         sql``,
       )}`;
   const [{ total }] = await sql<{ total: number }[]>`select count(*)::int as total from indicators ${where}`;
   const rows = await sql<CatalogPage["rows"]>`
     select id, source_id, source_code, name, category, subcategory, unit, frequency,
-           source_last_date, last_date, update_status, is_tracked, value_kind
+           source_last_date, last_date, update_status, is_tracked, value_kind, panel
     from indicators ${where}
-    order by is_tracked desc, source_last_date desc nulls last, name
+    order by (observation_count > 0) desc, (update_status = 'discontinued'), source_last_date desc nulls last, name
     limit ${opts.limit ?? 50} offset ${opts.offset ?? 0}`;
   return { rows, total };
 }

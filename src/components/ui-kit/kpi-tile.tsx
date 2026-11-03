@@ -5,8 +5,30 @@ import { computeChange, formatChange, formatValue, periodLabel, shortUnit } from
 import { cn } from "@/lib/utils";
 import { KindBadge, SourceBadge, StatusBadge } from "./badges";
 
+/**
+ * Tendencia de la ventana del minigráfico: compara el último dato con el
+ * primero de la ventana. Umbral: ±0,5 pp para tasas, ±1 % para el resto.
+ */
+export function trendOf(ind: Pick<IndicatorSnapshot, "spark" | "unit">): { dir: "up" | "down" | "flat"; label: string } | null {
+  const pts = ind.spark.filter((p) => p.v !== null);
+  if (pts.length < 3) return null;
+  const first = pts[0].v as number;
+  const last = pts[pts.length - 1].v as number;
+  const ch = computeChange(last, first, ind.unit);
+  if (!ch) return null;
+  const threshold = ch.kind === "pp" ? 0.5 : 1;
+  const dir = ch.value > threshold ? "up" : ch.value < -threshold ? "down" : "flat";
+  return { dir, label: dir === "up" ? "En alza" : dir === "down" ? "En baja" : "Estable" };
+}
+
+const TREND_ICON = { up: "↗", down: "↘", flat: "→" } as const;
+
 export function KpiTile({ ind, label }: { ind: IndicatorSnapshot; label?: string }) {
   const change = computeChange(ind.last_value, ind.prev_value, ind.unit);
+  const trend = trendOf(ind);
+  const window = ind.spark.length
+    ? `${periodLabel(ind.spark[0].d, ind.frequency)} – ${periodLabel(ind.spark[ind.spark.length - 1].d, ind.frequency)}`
+    : "";
   const up = change && change.value > 0;
   const down = change && change.value < 0;
   return (
@@ -47,7 +69,14 @@ export function KpiTile({ ind, label }: { ind: IndicatorSnapshot; label?: string
             </span>
           </div>
         </div>
-        <Sparkline data={ind.spark} className="h-10 w-24 shrink-0" />
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          <Sparkline data={ind.spark} className="h-10 w-24" />
+          {trend && (
+            <span className="text-[10px] text-muted-foreground" title={`Tendencia en la ventana ${window} (${ind.spark.length} obs.)`}>
+              <span aria-hidden>{TREND_ICON[trend.dir]}</span> {trend.label}
+            </span>
+          )}
+        </div>
       </div>
       {ind.update_status !== "ok" && (
         <div>
