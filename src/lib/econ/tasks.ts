@@ -102,6 +102,18 @@ export function prepare(ds: DatasetSpec): PreparedDataset {
   const a = alignSeries(inputs, { frequency: target, from: ds.from, to: ds.to });
   notes.push(...a.notes);
   if (a.dates.length < 3) throw new Error("Quedan menos de 3 observaciones comunes en el período: ampliá el período o revisá las transformaciones");
+  // Base 100 sin fecha explícita: se fija en el primer período común del análisis
+  // (no en el primer dato histórico de cada serie), para que las series sean comparables.
+  ds.series.forEach((s, j) => {
+    const last = (ds.recipes[s.meta.id] ?? []).at(-1);
+    if (last?.op !== "index100" || last.base) return;
+    const col = a.columns[j];
+    const base = col[0];
+    if (!base) return;
+    a.columns[j] = col.map((v) => (v / base) * 100);
+    prepared[j].unit = `Índice ${a.dates[0].slice(0, 7)} = 100`;
+    prepared[j].log = [...prepared[j].log.slice(0, -1), `${prepared[j].log.length}. Índice base 100: y(t) = 100 · x(t) / x(${a.dates[0].slice(0, 7)}) (primer período común del análisis)`];
+  });
   return { frequency: a.frequency, dates: a.dates, columns: a.columns, series: prepared, notes };
 }
 

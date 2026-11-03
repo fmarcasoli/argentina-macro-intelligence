@@ -116,3 +116,16 @@ describe("anomalías con criterios explícitos", () => {
     expect(detectAnomalies(dates, dates.map(() => 2), { unit: "%" })).toEqual([]);
   });
 });
+
+describe("base 100 al inicio del período comparado", () => {
+  it("todas las series valen 100 en el primer período común, aunque tengan historia más larga", async () => {
+    const r = await runTool("comparar", { ids: ["bcra.m2", "indec.ipc_nivel_general"], desde: "2020-01", transformacion: "base100" }, testClient());
+    const t = r.blocks.find((b) => b.type === "table" && b.title === "Datos de la comparación");
+    expect(t && t.type === "table").toBe(true);
+    const first = t && t.type === "table" ? t.rows[t.rows.length - 1] : [];
+    expect(first[0]).toBe("2020-01-01");
+    expect(first[1]).toBeCloseTo(100, 10);
+    expect(first[2]).toBeCloseTo(100, 10);
+    expect(r.sources.map((s) => s.unit)).toEqual(["Índice 2020-01 = 100", "Índice 2020-01 = 100"]);
+  });
+});
