@@ -24,9 +24,30 @@ export const REPORT_TOOL = {
   },
 };
 
+/**
+ * Versión compacta de las definiciones para el modelo: primera oración de cada
+ * descripción y solo las descripciones cortas de parámetros (los valores
+ * permitidos se mantienen). Reduce ~60 % los tokens por llamada, clave para
+ * los límites por minuto de los planes gratuitos (Groq, Gemini).
+ */
+function compact(fn: { name: string; description: string; parameters: Record<string, unknown> }) {
+  // Corta en el primer punto seguido de mayúscula (no en abreviaturas como "var.").
+  const firstSentence = fn.description.split(/(?<=\.)\s(?=[A-ZÁÉÍÓÚ])/)[0].replace(/\s*Transformaciones:.*$/, "");
+  const props = (fn.parameters.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const slim = Object.fromEntries(
+    Object.entries(props).map(([k, v]) => {
+      const { description, ...rest } = v;
+      // La lista de transformaciones va una sola vez en las instrucciones del sistema.
+      if (k === "transformacion") return [k, { type: "string" }];
+      return [k, typeof description === "string" && description.length <= 40 && !rest.enum ? { ...rest, description } : rest];
+    }),
+  );
+  return { name: fn.name, description: firstSentence, parameters: { ...fn.parameters, properties: slim } };
+}
+
 export const AI_TOOL_SPECS = [
-  ...TOOLS.map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.parameters } })),
-  { type: "function" as const, function: REPORT_TOOL },
+  ...TOOLS.map((t) => ({ type: "function" as const, function: compact({ name: t.name, description: t.description, parameters: t.parameters }) })),
+  { type: "function" as const, function: { ...REPORT_TOOL, description: `Informe automático con gráficos y tablas. Tipos: ${KINDS.join(", ")} (personalizado requiere ids).` } },
 ];
 
 export const AI_TOOL_NAMES = AI_TOOL_SPECS.map((t) => t.function.name);

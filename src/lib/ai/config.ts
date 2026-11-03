@@ -21,10 +21,13 @@ export function aiConfig(env: Record<string, string | undefined> = process.env):
   return {
     enabled,
     server: {
-      configured: Boolean(baseUrl && model),
+      // Un proveedor externo necesita su clave; un Ollama local o por túnel, no.
+      configured: Boolean(baseUrl && model && (env.AI_SERVER_API_KEY || /localhost|127\.0\.0\.1/.test(baseUrl))),
       baseUrl,
       model,
-      label: env.AI_SERVER_LABEL?.trim() || (baseUrl && /localhost|127\.0\.0\.1/.test(baseUrl) ? "Ollama (servidor)" : "Proveedor externo"),
+      label:
+        env.AI_SERVER_LABEL?.trim() ||
+        (baseUrl && /localhost|127\.0\.0\.1/.test(baseUrl) ? "Ollama (servidor)" : baseUrl && /groq\.com/.test(baseUrl) ? "Groq" : baseUrl && /googleapis\.com/.test(baseUrl) ? "Google Gemini" : "Proveedor externo"),
       hasKey: Boolean(env.AI_SERVER_API_KEY),
     },
   };

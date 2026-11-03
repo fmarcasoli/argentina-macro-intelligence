@@ -64,7 +64,7 @@ export function MacroAi({ server, initialQuestion }: { server: ServerStatus; ini
 
   // Configuración guardada en el navegador.
   useEffect(() => {
-    const s = loadSettings();
+    const s = loadSettings(server.configured);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- se lee localStorage una sola vez al montar
     setSettings(s.mode === "server" && !server.configured ? { ...s, mode: "browser" } : s);
   }, [server.configured]);

@@ -62,12 +62,14 @@ export interface AiSettings {
 export const DEFAULT_SETTINGS: AiSettings = { mode: "browser", ollamaUrl: "http://localhost:11434", model: "qwen2.5:7b", saveHistory: true };
 const KEY = "ami.macroai.settings";
 
-export function loadSettings(): AiSettings {
+/** Configuración guardada; sin configuración previa, usa el modelo del servidor si la app tiene uno. */
+export function loadSettings(serverConfigured = false): AiSettings {
+  const base = serverConfigured ? { ...DEFAULT_SETTINGS, mode: "server" as const } : DEFAULT_SETTINGS;
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AiSettings>) } : DEFAULT_SETTINGS;
+    return raw ? { ...base, ...(JSON.parse(raw) as Partial<AiSettings>) } : base;
   } catch {
-    return DEFAULT_SETTINGS;
+    return base;
   }
 }
 

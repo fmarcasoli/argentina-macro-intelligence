@@ -142,3 +142,35 @@ describe("configuración del servidor", () => {
     expect(validateChatBody({ messages: [{ role: "user", content: "x" }] }).ok).toBe(true);
   });
 });
+
+describe("proveedores en la nube (Groq): límites del plan gratuito", () => {
+  it("ante un 429 espera lo indicado y reintenta", async () => {
+    let calls = 0;
+    const fakeFetch = (async () => {
+      calls++;
+      if (calls === 1) return new Response('{"error":{"message":"Rate limit reached. Please try again in 0.05s."}}', { status: 429 });
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 });
+    }) as typeof fetch;
+    const p = openAiCompatibleProvider({ baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", apiKey: "k", fetchImpl: fakeFetch });
+    expect((await p.chat([{ role: "user", content: "hola" }], [])).content).toBe("ok");
+    expect(calls).toBe(2);
+  });
+  it("si la espera es larga, informa el límite en lugar de colgarse", async () => {
+    const fakeFetch = (async () => new Response("", { status: 429, headers: { "retry-after": "120" } })) as typeof fetch;
+    const p = openAiCompatibleProvider({ baseUrl: "https://api.groq.com/openai/v1", model: "m", fetchImpl: fakeFetch });
+    await expect(p.chat([{ role: "user", content: "x" }], [])).rejects.toThrow(/límite del plan gratuito/);
+  });
+  it("lee la espera de Groq y el encabezado Retry-After", async () => {
+    const { retryAfterMs } = await import("@/lib/ai/agent");
+    expect(retryAfterMs(null, "Please try again in 7.5s")).toBe(7750);
+    expect(retryAfterMs(null, "try again in 1m2s")).toBe(62250);
+    expect(retryAfterMs("3", "")).toBe(3250);
+  });
+  it("la lista compacta de herramientas entra en el límite por minuto", async () => {
+    const { AI_TOOL_SPECS } = await import("@/lib/ai/registry");
+    const { systemPrompt } = await import("@/lib/ai/agent");
+    expect(JSON.stringify(AI_TOOL_SPECS).length + systemPrompt("2026-11-03").length).toBeLessThan(11_000); // ≈ 3.000 tokens
+    expect(aiConfig({ AI_SERVER_BASE_URL: "https://api.groq.com/openai/v1", AI_SERVER_MODEL: "llama-3.3-70b-versatile", AI_SERVER_API_KEY: "x" }).server.label).toBe("Groq");
+    expect(aiConfig({ AI_SERVER_BASE_URL: "https://api.groq.com/openai/v1", AI_SERVER_MODEL: "llama-3.3-70b-versatile" }).server.configured).toBe(false); // falta la clave
+  });
+});

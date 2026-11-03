@@ -2,6 +2,7 @@ import { plan } from "./planner";
 import { AI_TOOL_SPECS, runAiTool } from "./registry";
 import type { Block, ChatTurn, DataClient, SourceRef, ToolResult, ToolTrace } from "./types";
 import { verifyNumbers } from "./verify";
+import { TRANSFORMS } from "./tools";
 import { CONCEPTS } from "./vocabulary";
 
 /**
@@ -53,7 +54,16 @@ export function parseOpenAiReply(json: unknown): LlmReply {
 }
 
 /** Proveedor compatible con OpenAI llamado directamente (p. ej. Ollama local desde el navegador). */
-export function openAiCompatibleProvider(opts: { baseUrl: string; model: string; apiKey?: string; label?: string; timeoutMs?: number; fetchImpl?: typeof fetch }): LlmProvider {
+/** Espera sugerida ante un 429: encabezado Retry-After o "try again in 7.5s" en el cuerpo (Groq). */
+export function retryAfterMs(header: string | null, body: string): number {
+  const h = header ? Number(header) : NaN;
+  if (Number.isFinite(h) && h >= 0) return Math.ceil(h * 1000) + 250;
+  const m = /try again in\s+(?:(\d+)m)?\s*([\d.]+)s/i.exec(body);
+  if (m) return Math.ceil((Number(m[1] ?? 0) * 60 + Number(m[2])) * 1000) + 250;
+  return 5000;
+}
+
+export function openAiCompatibleProvider(opts: { baseUrl: string; model: string; apiKey?: string; label?: string; timeoutMs?: number; fetchImpl?: typeof fetch; maxRetries?: number; maxWaitMs?: number }): LlmProvider {
   const f = opts.fetchImpl ?? fetch;
   return {
     label: opts.label ?? "Compatible con OpenAI",
@@ -63,14 +73,28 @@ export function openAiCompatibleProvider(opts: { baseUrl: string; model: string;
       const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 180_000);
       signal?.addEventListener("abort", () => ctrl.abort());
       try {
-        const res = await f(`${opts.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(opts.apiKey ? { Authorization: `Bearer ${opts.apiKey}` } : {}) },
-          body: JSON.stringify({ model: opts.model, messages, tools, tool_choice: "auto", temperature: 0.1, stream: false }),
-          signal: ctrl.signal,
-        });
-        if (!res.ok) throw new ProviderError(`El modelo respondió ${res.status}: ${(await res.text()).slice(0, 200)}`);
-        return parseOpenAiReply(await res.json());
+        const body = JSON.stringify({ model: opts.model, messages, tools, tool_choice: "auto", temperature: 0.1, stream: false });
+        for (let attempt = 0; ; attempt++) {
+          const res = await f(`${opts.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(opts.apiKey ? { Authorization: `Bearer ${opts.apiKey}` } : {}) },
+            body,
+            signal: ctrl.signal,
+          });
+          // Límite por minuto de los planes gratuitos: se espera lo que indique el proveedor y se reintenta.
+          if (res.status === 429 && attempt < (opts.maxRetries ?? 2)) {
+            const text = await res.text();
+            const wait = retryAfterMs(res.headers.get("retry-after"), text);
+            if (wait <= (opts.maxWaitMs ?? 30_000)) {
+              await new Promise((r) => setTimeout(r, wait));
+              continue;
+            }
+            throw new ProviderError(`Se alcanzó el límite del plan gratuito del proveedor (reintentar en ${Math.ceil(wait / 1000)} s).`);
+          }
+          if (res.status === 429) throw new ProviderError("Se alcanzó el límite del plan gratuito del proveedor. Probá de nuevo en un minuto.");
+          if (!res.ok) throw new ProviderError(`El modelo respondió ${res.status}: ${(await res.text()).slice(0, 200)}`);
+          return parseOpenAiReply(await res.json());
+        }
       } catch (e) {
         if (e instanceof ProviderError) throw e;
         throw new ProviderError(`No se pudo conectar con el modelo (${opts.baseUrl}): ${(e as Error).message}`);
@@ -112,6 +136,7 @@ export function systemPrompt(today: string): string {
     "6. No afirmes que hay datos diarios de series mensuales o trimestrales.",
     "FORMATO de la respuesta final (breve): **Resumen** (2-4 oraciones con las cifras clave), **Datos y metodología** (series, período, transformaciones), **Interpretación** (hipótesis, marcadas como tales), **Limitaciones**. Los gráficos y tablas de las herramientas se muestran solos: no los repitas.",
     `Series frecuentes: ${CONCEPTS.map((c) => `${c.label}=${c.id}`).join("; ")}. Para inflación usá indec.ipc_nivel_general con transformación variacion_mensual o variacion_interanual.`,
+    `Transformaciones: ${Object.entries(TRANSFORMS).map(([k, v]) => `${k}=${v.label}`).join("; ")}. Fechas: AAAA-MM.`,
   ].join("\n");
 }
 
@@ -186,7 +211,8 @@ export async function answerWithRules(question: string, opts: AgentOptions, reas
   return { role: "assistant", content, blocks, sources, methodology, tools: traces, mode: "rules", createdAt: new Date().toISOString() };
 }
 
-const MAX_TOOL_CHARS = 3500;
+// Resultados resumidos para el modelo (las tablas completas se muestran igual en pantalla).
+const MAX_TOOL_CHARS = 1800;
 
 /** Respuesta con modelo de lenguaje y herramientas; cae al modo por reglas si el modelo no responde. */
 export async function answer(question: string, opts: AgentOptions): Promise<ChatTurn> {
