@@ -87,3 +87,33 @@ export async function ensureIndicator(id: string): Promise<EnsureResult> {
   const sql = await db();
   return ensureSeriesData(sql, defaultConnectors(), id);
 }
+
+export interface SeriesVintages {
+  id: string;
+  /** Fecha desde la que la plataforma registra publicaciones y revisiones de esta serie. */
+  trackedSince: string | null;
+  observations: { d: string; v: number | null; availableAt: string }[];
+  revisions: { d: string; oldValue: number | null; revisedAt: string }[];
+}
+
+/**
+ * Datos para reconstruir versiones históricas (vintages) de una serie: cuándo
+ * estuvo disponible cada observación (fecha de publicación informada por la
+ * fuente o, si no la informa, la primera vez que la vio la plataforma) y el
+ * historial de revisiones de valores ya publicados.
+ */
+export async function getSeriesVintages(id: string): Promise<SeriesVintages> {
+  const sql = await db();
+  const observations = await sql<{ d: string; v: number | null; availableAt: string }[]>`
+    select ref_date as d, value as v,
+           to_char(coalesce(case when publication_origin = 'source' then publication_date::timestamptz end, first_seen_at)
+                   at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "availableAt"
+    from observations where indicator_id = ${id} and not is_scheduled order by ref_date`;
+  const revisions = await sql<{ d: string; oldValue: number | null; revisedAt: string }[]>`
+    select ref_date as d, old_value as "oldValue",
+           to_char(revised_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "revisedAt"
+    from observation_revisions where indicator_id = ${id} order by revised_at`;
+  const [first] = await sql<{ since: string | null }[]>`
+    select to_char(min(first_seen_at) at time zone 'UTC', 'YYYY-MM-DD') as since from observations where indicator_id = ${id}`;
+  return { id, trackedSince: first?.since ?? null, observations, revisions };
+}

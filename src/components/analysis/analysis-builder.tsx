@@ -231,7 +231,7 @@ export function AnalysisBuilder() {
   );
 }
 
-function CatalogSearch({ onAdd, selected, disabled }: { onAdd: (id: string) => void; selected: string[]; disabled: boolean }) {
+export function CatalogSearch({ onAdd, selected, disabled }: { onAdd: (id: string) => void; selected: string[]; disabled: boolean }) {
   const [q, setQ] = useState("");
   const [source, setSource] = useState<"" | "INDEC" | "BCRA">("");
   const [rows, setRows] = useState<CatalogRow[]>([]);

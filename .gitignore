@@ -43,3 +43,7 @@ next-env.d.ts
 
 # datos locales de Postgres embebido
 /.data
+
+# entorno Python local (referencias statsmodels para tests)
+/.venv-econ
+__pycache__/

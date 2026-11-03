@@ -27,14 +27,12 @@ export const NAV_SECTIONS: NavSection[] = [
     planned: ["Editor de fórmulas sobre el catálogo", "Guardado en análisis del usuario", "Trazabilidad completa hasta la fuente"],
   },
   {
-    href: "/econometria", label: "Econometría", short: "ECO", icon: "econometrics", status: "construction",
-    description: "Modelos estadísticos sobre las series del catálogo (procesos en Python).",
-    planned: ["Regresiones MCO", "Desestacionalización", "Tests de raíz unitaria y cointegración"],
+    href: "/econometria", label: "Econometría", short: "ECO", icon: "econometrics", status: "ready",
+    description: "Estadística, correlaciones, regresiones, raíz unitaria, ARIMA, VAR, cointegración, proyecciones y backtesting sobre cualquier serie del catálogo.",
   },
   {
-    href: "/simulador", label: "Simulador macroeconómico", short: "SIM", icon: "simulator", status: "construction",
-    description: "Escenarios macro y sensibilidad de variables clave.",
-    planned: ["Escenarios de tipo de cambio e inflación", "Trayectorias de tasas", "Comparación contra REM"],
+    href: "/simulador", label: "Simulador macroeconómico", short: "SIM", icon: "simulator", status: "ready",
+    description: "Simulaciones aritméticas, escenarios definidos por el usuario y shocks en un modelo VAR estimado con datos oficiales.",
   },
   {
     href: "/calculadoras", label: "Calculadoras económicas", short: "CAL", icon: "calculators", status: "ready",

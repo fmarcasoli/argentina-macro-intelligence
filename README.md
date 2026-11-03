@@ -10,9 +10,16 @@ datos oficiales del **INDEC** y del **BCRA**.
   gráficos (transformaciones, frecuencia común, zoom, exportaciones), constructor
   de análisis integrado INDEC + BCRA, calculadoras económicas y guardado de
   análisis y favoritos. Detalle en [`docs/ANALYSIS.md`](docs/ANALYSIS.md).
+- **Fase 3 — Motor econométrico y simulador:** estadística descriptiva,
+  transformaciones reproducibles, correlaciones, regresiones MCO con
+  diagnósticos, raíz unitaria (ADF, KPSS), ARIMA, VAR (Granger,
+  impulso-respuesta), cointegración (Engle-Granger, Johansen, VECM),
+  proyecciones con bandas, backtesting sin información futura y simulador
+  macroeconómico (identidades, escenarios del usuario y shocks en un VAR).
+  Verificado contra statsmodels. Detalle en [`docs/ECONOMETRICS.md`](docs/ECONOMETRICS.md).
 
-Los módulos de econometría, simulador, MACRO AI, reportes y constructor de
-indicadores siguen “en construcción” para fases posteriores.
+Los módulos de MACRO AI, reportes y constructor de indicadores siguen “en
+construcción” para fases posteriores.
 
 | | |
 |---|---|
@@ -20,7 +27,8 @@ indicadores siguen “en construcción” para fases posteriores.
 | Datos | PostgreSQL (Supabase en producción; Postgres embebido en desarrollo) |
 | Ingesta | Conectores TypeScript `BCRAConnector` e `INDECConnector` |
 | Despliegue | Vercel (Hobby) + Supabase (Free) |
-| Tests | Vitest: conectores, normalizadores, cálculos, integración con Postgres, verificación en vivo |
+| Econometría | Motor TypeScript propio en un Web Worker (sin cálculo en Vercel) · Python/statsmodels solo local, como referencia de los tests |
+| Tests | Vitest: conectores, normalizadores, cálculos, econometría contra statsmodels, integración con Postgres, verificación en vivo |
 
 ## Estado de los datos (2026-11-03)
 
@@ -85,6 +93,8 @@ npm run dev
 | `npm test` | Tests unitarios (+ integración si hay `TEST_DATABASE_URL`) |
 | `npm run test:live` | Verifica cada serie del registro contra las APIs reales |
 | `npm run typecheck` · `npm run lint` | Chequeos estáticos |
+| `npm run econ:setup` | Crea `.venv-econ` con statsmodels (solo para regenerar referencias) |
+| `npm run econ:fixtures` · `econ:tables` · `econ:reference` | Descarga datos oficiales de prueba, exporta tablas de valores críticos y regenera los resultados de referencia de statsmodels |
 
 ### Tests
 
@@ -110,6 +120,14 @@ unidades y advertencias metodológicas, calculadoras (inflación validada contra
 el 117,8 % oficial de 2024 y contra la variación mensual publicada, Fisher,
 devaluación, salarios reales), clasificación de categorías, descarga a pedido,
 orden de series derivadas, límite de tiempo del cron y espacios de trabajo.
+
+Fase 3: cada método econométrico se compara contra statsmodels/scipy sobre
+datos oficiales del INDEC y datos sintéticos con semilla fija
+(`tests/econ-reference.test.ts`: MCO y errores robustos, diagnósticos, ADF,
+KPSS, MacKinnon, Engle-Granger, descomposición, HP, ACF/PACF, ARIMA, VAR,
+Granger, impulso-respuesta, FEVD, Johansen y VECM), más propiedades propias
+(`tests/econ-engine.test.ts`: recetas reproducibles, alineación, ausencia de
+información futura en el backtesting, vintages, identidades del simulador).
 
 ---
 
@@ -176,6 +194,7 @@ No hay credenciales en el código: `.env*` está en `.gitignore` (salvo `.env.ex
 | `GET /api/indicators/{id}/observations?from=&to=&format=json\|csv` | Observaciones con trazabilidad (valor crudo, fecha de la fuente, tipo, publicación, revisiones) |
 | `GET /api/sync?source=BCRA\|INDEC` | Sincronización incremental (requiere `Authorization: Bearer $CRON_SECRET`) |
 | `GET /api/series?ids=a,b&ipc=1` | Series para el motor de gráficos (descarga a pedido las que no tienen datos) |
+| `GET /api/series/vintages?id=` | Disponibilidad de cada observación y su historial de revisiones (backtesting sin información futura) |
 | `GET/POST /api/workspace/analyses` · `/{id}` | Análisis guardados del espacio de trabajo |
 | `GET/POST/DELETE /api/workspace/favorites` | Series favoritas |
 
@@ -189,6 +208,7 @@ src/
   components/               layout, gráficos (Recharts), UI
   lib/
     analysis/               motor de análisis y calculadoras (funciones puras)
+    econ/                   motor econométrico y simulador (funciones puras + Web Worker)
     connectors/             BCRAConnector, INDECConnector, cliente HTTP
     normalize/              normalización, validación, fechas, series derivadas
     ingest/                 catálogo, motor de sincronización y descarga a pedido
@@ -197,10 +217,10 @@ src/
     data/queries.ts         lecturas para la interfaz
     db/                     cliente Postgres y migrador
 scripts/                    CLI: db local, migraciones, catálogo, sync
+scripts/econ/               Python local: tablas de valores críticos y referencias statsmodels
 supabase/migrations/        esquema SQL
 tests/                      unitarios, integración, en vivo y fixtures reales
-docs/                       documentación de APIs y modelo de datos
-python/                     reservado para procesos estadísticos (fases futuras)
+docs/                       documentación de APIs, modelo de datos, análisis y econometría
 ```
 
 ## Navegación
@@ -212,8 +232,8 @@ python/                     reservado para procesos estadísticos (fases futuras
 | 03 | Banco Central | ✅ (14 categorías, buscador, fichas) |
 | 04 | Análisis integrado | ✅ (constructor INDEC + BCRA) |
 | 05 | Constructor de indicadores | 🚧 |
-| 06 | Econometría | 🚧 |
-| 07 | Simulador macroeconómico | 🚧 |
+| 06 | Econometría | ✅ (descriptiva, correlaciones, MCO, series temporales, VAR, VECM, proyecciones, backtesting) |
+| 07 | Simulador macroeconómico | ✅ (aritmético, escenarios del usuario, shocks en VAR estimado) |
 | 08 | Calculadoras económicas | ✅ (inflación, tasas reales, devaluación, salarios y agregados reales) |
 | 09 | MACRO AI | 🚧 |
 | 10 | Reportes | 🚧 |
@@ -231,3 +251,5 @@ revisiones, historial de sincronización y descarga CSV.
 - Autenticación de usuarios: el esquema está listo (Supabase Auth + RLS), pero el login no está implementado. Favoritos y análisis guardados se asocian al navegador (cookie); si se borran las cookies se pierde el acceso a ellos.
 - Algunas series del INDEC publican porcentajes como proporción (0,079) con unidad "Porcentaje". Las series núcleo se normalizan; las abiertas a pedido se muestran tal como las publica la fuente.
 - El "tipo de cambio real" del constructor es el tipo de cambio nominal deflactado por el IPC local (no incluye inflación externa): se indica en el ejemplo.
+- El backtesting usa versiones históricas (vintages) solo desde que la plataforma registra publicaciones y revisiones de cada serie; para fechas anteriores usa los datos vigentes y lo advierte.
+- La desestacionalización propia es la descomposición clásica por medias móviles: no reemplaza al X-13ARIMA-SEATS del INDEC (usar las series desestacionalizadas oficiales cuando existan).

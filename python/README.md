@@ -1,11 +1,16 @@
-# Procesos estadísticos en Python (fases futuras)
+# Python en el proyecto
 
-Reservado para los módulos de Econometría y Simulador. En la Fase 1 no hay
-código Python: la ingesta y la normalización están en TypeScript.
+Los módulos de Econometría y Simulador (Fase 3) se implementaron en
+TypeScript (`src/lib/econ/`) y corren en un Web Worker del navegador: así los
+cálculos no bloquean las funciones de Vercel ni exceden sus límites de tamaño
+(statsmodels + numpy + scipy no entran en una función del plan Hobby).
 
-Cuando se implemente, los procesos leerán directamente de PostgreSQL con la
-misma `DATABASE_URL` y escribirán resultados como series calculadas
-(`indicators.value_kind = 'calculated'` con su `derivation`) o como
-`saved_analyses`, manteniendo la trazabilidad hasta las series de origen.
+Python se usa **solo localmente**, como referencia de verificación:
+`scripts/econ/` exporta las tablas de valores críticos de statsmodels y genera
+los resultados con los que los tests comparan el motor. Ver
+[`docs/ECONOMETRICS.md`](../docs/ECONOMETRICS.md).
 
-Dependencias previstas (open source): `pandas`, `numpy`, `statsmodels`, `psycopg[binary]`.
+```bash
+npm run econ:setup       # crea .venv-econ (statsmodels 0.14.4, scipy, numpy, pandas)
+npm run econ:reference   # regenera tests/fixtures/econ/reference.json
+```

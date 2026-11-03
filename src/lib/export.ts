@@ -106,3 +106,44 @@ export async function downloadPng(node: HTMLElement, title: string) {
   const blob = await (await fetch(url)).blob();
   download(blob, exportFileName(title, "png"));
 }
+
+// ── Tablas de resultados (motor econométrico) ───────────────────────────────
+
+export interface ExportSheet {
+  name: string;
+  header: string[];
+  rows: (string | number | null)[][];
+}
+
+export function tableToCsv(sheet: ExportSheet): string {
+  const lines = [sheet.header.map(csvCell).join(",")];
+  for (const r of sheet.rows) lines.push(r.map((v) => csvCell(v ?? "")).join(","));
+  return lines.join("\n") + "\n";
+}
+
+/** CSV de la primera hoja; la metodología va como comentario al final. */
+export function downloadTableCsv(title: string, sheet: ExportSheet, notes: string[] = []) {
+  const tail = notes.length ? "\n" + notes.map((n) => csvCell(`# ${n}`)).join("\n") + "\n" : "";
+  download(new Blob(["﻿" + tableToCsv(sheet) + tail], { type: "text/csv;charset=utf-8" }), exportFileName(title, "csv"));
+}
+
+/** Excel con una hoja por tabla y una hoja de metodología (receta, fuentes, advertencias). */
+export async function downloadTablesXlsx(title: string, sheets: ExportSheet[], methodology: string[]) {
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const bold = (value: string) => ({ value, fontWeight: "bold" as const });
+  const safeName = (s: string) => s.replace(/[\\/?*[\]:]/g, " ").slice(0, 31);
+  const all = [
+    ...sheets.map((s) => ({
+      sheet: safeName(s.name),
+      data: [s.header.map(bold), ...s.rows.map((r) => r.map((v) => (v === undefined ? null : v)))],
+      columns: s.header.map((_, i) => ({ width: i === 0 ? 22 : 16 })),
+    })),
+    {
+      sheet: "Metodología",
+      data: [[bold(title)], [`Generado ${new Date().toISOString()}`], ["Argentina Macro Intelligence — datos oficiales INDEC y BCRA"], [], ...methodology.map((m) => [m])],
+      columns: [{ width: 120 }],
+    },
+  ];
+  const blob = await writeXlsxFile(all, {}).toBlob();
+  download(blob, exportFileName(title, "xlsx"));
+}
